@@ -1336,8 +1336,10 @@ html[data-theme="dark"] .sidebar-nav > a:hover .sidebar-action-count {
         $activeWorkspace = auth()->user()->primaryWorkspace();
         $unread = App\Models\NotificationDelivery::where('recipient_user_id', auth()->id())->where('channel', 'SYSTEM')->whereNull('read_at')->count();
         $classification = auth()->user()->access_classification;
-        $sidebarActionCounts = app(\App\Services\SidebarActionCountService::class)->counts(auth()->user());
-        $sidebarTones = app(\App\Services\SidebarActionCountService::class)->tones(auth()->user());
+        // Load advisory badge counts asynchronously; never block HTML page rendering
+        // on potentially expensive accountability work-queue queries.
+        $sidebarActionCounts = [];
+        $sidebarTones = [];
         $navigation = match ($activeWorkspace) {
             'BORROWER' => [
                 ['dashboard', 'dashboard', 'Dashboard', 'dashboard'],
@@ -1586,6 +1588,13 @@ html[data-theme="dark"] .sidebar-nav > a:hover .sidebar-action-count {
                     refreshing = false;
                 }
             };
+            // Render the page first, then load current role-specific badge counts.
+            // The existing endpoint still enforces authentication and authorization.
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', refresh, { once: true });
+            } else {
+                refresh();
+            }
             setInterval(refresh, 120000);
             document.addEventListener('visibilitychange', function () {
                 if (!document.hidden) refresh();
