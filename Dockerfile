@@ -56,6 +56,11 @@ COPY --from=vendor /app/vendor ./vendor
 COPY docker/php-production.ini /usr/local/etc/php/conf.d/99-spmu-production.ini
 
 RUN chmod +x docker/entrypoint.sh \
+    # Source files can arrive from Git with 0600/0700 permissions.
+    # Keep executable scripts intact but allow Apache (www-data) to read code.
+    && chmod -R a+rX app config database public resources routes vendor \
+    && chmod 755 bootstrap \
+    && chmod 644 bootstrap/*.php artisan composer.json composer.lock \
     && mkdir -p \
         storage/app \
         storage/framework/cache \
