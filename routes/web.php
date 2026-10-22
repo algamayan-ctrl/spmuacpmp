@@ -115,6 +115,11 @@ Route::middleware(['auth', 'active', 'verified-email', 'approved-registration', 
 
     Route::get('/dashboard', DashboardController::class)
         ->name('dashboard');
+    // Read-only, role-scoped estimate and explicit staff active-time start.
+    Route::get('/requests/{borrowingRequest}/processing-estimate', [\App\Http\Controllers\ProcessingTimeController::class, 'status'])
+        ->middleware('throttle:30,1')->name('requests.processing-estimate');
+    Route::post('/requests/{borrowingRequest}/processing-stages/start', [\App\Http\Controllers\ProcessingTimeController::class, 'start'])
+        ->middleware('throttle:20,1')->name('requests.processing-stages.start');
 
     Route::get('/operational-advisory/status', OperationalAdvisoryController::class)
         ->middleware('throttle:30,1')
