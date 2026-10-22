@@ -162,6 +162,8 @@
 </section>
 @endif
 
+@include('requests.partials.processing-time-estimate')
+
 @if($errors->any())
 <section class="content-area">
     <div class="callout danger">
