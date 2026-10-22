@@ -268,6 +268,7 @@
     @include('custody.partials.release-process-styles')
     <div class="release-flow-page" data-release-process>
     @include('custody.partials.release-heading')
+    @include('requests.partials.processing-time-estimate', ['borrowingRequest' => $custody->request])
 @elseif(! $useReturnProcessLayout)
 <section class="page-heading">
     <div>
