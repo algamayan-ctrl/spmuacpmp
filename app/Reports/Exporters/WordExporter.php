@@ -2,11 +2,15 @@
 
 namespace App\Reports\Exporters;
 
-use App\Reports\ReportScopeFormatter;
+use App\Reports\ReportCatalogue;
 use App\Reports\ReportDataset;
 use App\Reports\ReportExportOptions;
+use App\Reports\ReportScopeFormatter;
 use App\Reports\ReportSummaryFormatter;
+use App\Reports\ReportTableLayout;
+use PhpOffice\PhpWord\IOFactory;
 use PhpOffice\PhpWord\PhpWord;
+use PhpOffice\PhpWord\Settings;
 use PhpOffice\PhpWord\SimpleType\Jc;
 use PhpOffice\PhpWord\Style\Language;
 
@@ -23,6 +27,7 @@ class WordExporter
     public function render(ReportDataset $dataset, ReportExportOptions $options): string
     {
         $word = new PhpWord;
+        Settings::setOutputEscapingEnabled(true);
         $word->getSettings()->setThemeFontLang(new Language(Language::EN_US));
         $word->setDefaultFontName('Arial');
         $word->setDefaultFontSize($options->fontSize ?: 9);
@@ -45,11 +50,15 @@ class WordExporter
         $this->addTitle($section, $dataset, $meta);
         $this->addMetadata($section, $meta, $options);
 
+        $this->addTable($section, $dataset, $options);
+
+        foreach ($dataset->meta['table_notes'] ?? [] as $note) {
+            $section->addText($note, ['size' => 8], ['spaceBefore' => 60, 'spaceAfter' => 0]);
+        }
+
         if ($options->includeSummary && ! empty($dataset->summary)) {
             $this->addSummary($section, $dataset);
         }
-
-        $this->addTable($section, $dataset, $options);
 
         if ($options->includeFooter) {
             $this->addFooter($section);
@@ -99,7 +108,7 @@ class WordExporter
             ['alignment' => Jc::CENTER, 'spaceAfter' => 0]
         );
 
-        $period = \App\Reports\ReportCatalogue::periodMode($dataset->reportKey) === 'as_of'
+        $period = ReportCatalogue::periodMode($dataset->reportKey) === 'as_of'
             ? 'As of '.($meta['as_of_long'] ?? '')
             : 'For the period '.($meta['period_long'] ?? '');
 
@@ -139,13 +148,14 @@ class WordExporter
 
     private function addTable(mixed $section, ReportDataset $dataset, ReportExportOptions $options): void
     {
-        $bodyFontSize = $options->fontSize ?: 9;
+        $bodyFontSize = $options->fontSize ?: ReportTableLayout::fontSize($dataset->columns);
         $headerFontSize = max(6.0, $bodyFontSize - 1.0);
 
         $table = $section->addTable([
             'borderSize' => 6,
             'borderColor' => 'AAAAAA',
             'cellMargin' => 50,
+            'layout' => 'fixed',
             'width' => 100 * 50,
             'unit' => 'pct',
         ]);
@@ -154,22 +164,37 @@ class WordExporter
          * tblHeader repeats the header row when the table breaks across
          * pages, which is the Word equivalent of the print rule.
          */
-        $table->addRow(null, ['tblHeader' => $options->repeatHeaders]);
+        $usableWidth = $this->pageWidth($options) - $this->twips($options->marginsMm['left'] + $options->marginsMm['right']);
+        $widths = array_map(fn (float $width): int => (int) round($usableWidth * $width / 100), ReportTableLayout::widths($dataset->columns));
+        $headers = ReportTableLayout::headers($dataset->columns);
 
-        foreach ($dataset->columns as $column) {
-            $cell = $table->addCell(null, ['bgColor' => 'F2F2F2', 'valign' => 'bottom']);
-            $cell->addText(
-                mb_strtoupper((string) $column['label']),
-                ['bold' => true, 'size' => $headerFontSize],
-                ['spaceAfter' => 0]
-            );
+        foreach ($headers as $headerIndex => $headerRow) {
+            $table->addRow(null, ['tblHeader' => $options->repeatHeaders, 'cantSplit' => true]);
+            $cells = array_column($headerRow, null, 'index');
+
+            for ($index = 0; $index < count($dataset->columns); $index++) {
+                $heading = $cells[$index] ?? null;
+                $style = ['bgColor' => 'F0F0F0', 'valign' => 'center'];
+                $span = $heading['colspan'] ?? 1;
+                if ($span > 1) {
+                    $style['gridSpan'] = $span;
+                }
+                if (($heading['rowspan'] ?? 1) > 1) {
+                    $style['vMerge'] = 'restart';
+                } elseif ($heading === null && $headerIndex > 0) {
+                    $style['vMerge'] = 'continue';
+                }
+                $cell = $table->addCell(array_sum(array_slice($widths, $index, $span)), $style);
+                $cell->addText(mb_strtoupper($heading['label'] ?? ''), ['bold' => true, 'size' => $headerFontSize], ['alignment' => Jc::CENTER, 'spaceAfter' => 0]);
+                $index += $span - 1;
+            }
         }
 
         if ($dataset->isEmpty()) {
             $table->addRow();
             $table->addCell(null, ['gridSpan' => max(1, count($dataset->columns))])
                 ->addText(
-                    \App\Reports\ReportCatalogue::emptyMessage($dataset->reportKey),
+                    ReportCatalogue::emptyMessage($dataset->reportKey),
                     ['size' => 8],
                     ['alignment' => Jc::CENTER, 'spaceAfter' => 0]
                 );
@@ -180,14 +205,16 @@ class WordExporter
         foreach ($dataset->rows as $record) {
             $table->addRow();
 
-            foreach ($dataset->columns as $column) {
+            foreach ($dataset->columns as $index => $column) {
                 $alignment = ($column['align'] ?? null) === 'numeric' ? Jc::END : Jc::START;
 
-                $table->addCell(null, ['valign' => 'top'])->addText(
-                    (string) ($record[$column['key']] ?? ''),
-                    ['size' => $bodyFontSize],
-                    ['alignment' => $alignment, 'spaceAfter' => 0]
-                );
+                $run = $table->addCell($widths[$index], ['valign' => 'top'])->addTextRun(['alignment' => $alignment, 'spaceAfter' => 0]);
+                foreach (explode("\n", (string) ($record[$column['key']] ?? '')) as $lineIndex => $line) {
+                    if ($lineIndex > 0) {
+                        $run->addTextBreak();
+                    }
+                    $run->addText($line, ['size' => $bodyFontSize]);
+                }
             }
         }
     }
@@ -265,7 +292,7 @@ class WordExporter
     {
         $file = tempnam(sys_get_temp_dir(), 'spmu-report-');
 
-        \PhpOffice\PhpWord\IOFactory::createWriter($word, 'Word2007')->save($file);
+        IOFactory::createWriter($word, 'Word2007')->save($file);
 
         $contents = (string) file_get_contents($file);
         @unlink($file);

@@ -168,6 +168,9 @@ html[data-theme="dark"] .release-status-heading--success { color: var(--success)
 html[data-theme="dark"] .release-flow-page .request-tracker__step.is-current .request-tracker__marker { background: #0863db; border-color: #0863db; }
 @media (max-width: 1100px) {
     .release-flow-page .release-page-heading { grid-template-columns: 1fr; }
+    /* The shared heading pins actions to column 2. Reset that placement when
+       this summary stacks, otherwise Grid creates an implicit second column. */
+    .release-flow-page .release-page-heading > .release-status-summary { grid-column: auto; }
     .release-flow-page .release-overview-grid { grid-template-columns: minmax(0, 1fr); }
     .release-flow-page .release-status-summary { width: 100%; max-width: 540px; justify-self: end; }
     .release-flow-page { --release-actions-width: 96px; }

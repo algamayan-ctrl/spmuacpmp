@@ -20,13 +20,15 @@
         @include('reports.document.metadata')
     @endif
 
-    @if($options['summary'] ?? true)
-        @include('reports.document.summary')
-    @endif
-
     <div class="doc-table-scroll">
         @include('reports.document.table')
     </div>
+
+    @include('reports.document.table-notes')
+
+    @if($options['summary'] ?? true)
+        @include('reports.document.summary')
+    @endif
 
     @if($options['footer'] ?? true)
         @include('reports.document.footer')

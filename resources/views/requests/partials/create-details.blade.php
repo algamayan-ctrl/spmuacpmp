@@ -9,7 +9,7 @@
     <div class="request-card-body request-information-fields">
         <div class="field-grid">
             <label>
-                Purpose of Borrowing
+                Event
                 <input
                     name="purpose_event"
                     value="{{ old('purpose_event', $version->purpose_event) }}"

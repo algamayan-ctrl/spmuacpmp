@@ -30,6 +30,8 @@
 
 html, body { margin: 0; padding: 0; background: #fff; }
 .report-print-page { padding: 24px; }
+.report-print-page .doc-table { font-size: {{ $exportOptions->fontSize ?: App\Reports\ReportTableLayout::fontSize($dataset->columns) }}pt; }
+.report-print-page .doc-table th { font-size: {{ max(6, ($exportOptions->fontSize ?: App\Reports\ReportTableLayout::fontSize($dataset->columns)) - 0.9) }}pt; }
 
 @media print {
     .report-print-page { padding: 0; }

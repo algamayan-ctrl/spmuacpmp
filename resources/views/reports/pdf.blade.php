@@ -12,7 +12,7 @@
     $scopeSummary = implode(' · ', array_column(App\Reports\ReportScopeFormatter::rows($appliedFilters), 'value'));
     $margins = $exportOptions->marginsInPoints();
     $periodMode = App\Reports\ReportCatalogue::periodMode($dataset->reportKey);
-    $fontSize = $exportOptions->fontSize ?: 7.5;
+    $fontSize = $exportOptions->fontSize ?: App\Reports\ReportTableLayout::fontSize($dataset->columns);
 @endphp
 <!doctype html>
 <html lang="en">
@@ -21,7 +21,7 @@
 <title>{{ $dataset->label }}</title>
 <style>
     @page {
-        margin: {{ $margins['top'] }}pt {{ $margins['right'] }}pt {{ $margins['bottom'] }}pt {{ $margins['left'] }}pt;
+        margin: {{ $margins['top'] }}pt {{ $margins['right'] }}pt {{ max(58, $margins['bottom']) }}pt {{ $margins['left'] }}pt;
     }
 
     body {
@@ -46,21 +46,26 @@
     .doc-meta div { margin: 0 0 1pt; font-size: 8pt; }
     .doc-meta span { display: inline-block; width: 96pt; }
 
-    table.doc-table { width: 100%; border-collapse: collapse; }
+    table.doc-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
     @if(! ($options['repeat_headers'] ?? true))
     table.doc-table thead { display: table-row-group; }
     @endif
     table.doc-table th {
-        padding: 4pt 4pt;
+        padding: 4pt 2pt;
         background: #f2f2f2;
         border: 0.6pt solid #999;
-        font-size: {{ max(6, $fontSize - 1.2) }}pt;
+        font-size: {{ max(6, $fontSize - 0.9) }}pt;
         font-weight: bold;
-        text-align: left;
+        text-align: center;
+        vertical-align: middle;
         text-transform: uppercase;
+        overflow-wrap: break-word;
+        word-wrap: break-word;
     }
-    table.doc-table td { padding: 3.5pt 4pt; border: 0.6pt solid #bbb; vertical-align: top; }
+    table.doc-table td { padding: 3.5pt 3pt; border: 0.6pt solid #bbb; vertical-align: top; white-space: pre-line; overflow-wrap: break-word; }
     table.doc-table td.numeric, table.doc-table th.numeric { text-align: right; }
+    .doc-table-notes { margin-top: 8pt; font-size: 7pt; }
+    .doc-table-notes p { margin: 2pt 0; }
     .doc-table-empty { text-align: center; padding: 14pt 4pt; color: #555; }
 
     .doc-summary { margin: 8pt 0 10pt; }
@@ -113,6 +118,9 @@
     @endif
 </div>
 
+@include('reports.document.table')
+@include('reports.document.table-notes')
+
 @if(($options['summary'] ?? true) && ! empty($dataset->summary))
     <div class="doc-summary">
         <div class="doc-summary-heading">Report Summary</div>
@@ -128,31 +136,6 @@
         </table>
     </div>
 @endif
-
-<table class="doc-table">
-    <thead>
-        <tr>
-            @foreach($dataset->columns as $column)
-                <th @class(['numeric' => ($column['align'] ?? null) === 'numeric'])>{{ $column['label'] }}</th>
-            @endforeach
-        </tr>
-    </thead>
-    <tbody>
-        @forelse($dataset->rows as $record)
-            <tr>
-                @foreach($dataset->columns as $column)
-                    <td @class(['numeric' => ($column['align'] ?? null) === 'numeric'])>{{ $record[$column['key']] ?? '' }}</td>
-                @endforeach
-            </tr>
-        @empty
-            <tr>
-                <td class="doc-table-empty" colspan="{{ max(1, count($dataset->columns)) }}">
-                    {{ App\Reports\ReportCatalogue::emptyMessage($dataset->reportKey) }}
-                </td>
-            </tr>
-        @endforelse
-    </tbody>
-</table>
 
 @if($options['footer'] ?? true)
     <div class="doc-footer">

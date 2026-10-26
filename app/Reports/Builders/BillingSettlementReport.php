@@ -133,14 +133,14 @@ class BillingSettlementReport implements ReportBuilder
                 ['key' => 'borrower', 'label' => 'Borrower'],
                 ['key' => 'affected_property', 'label' => 'Affected Property'],
                 ['key' => 'basis', 'label' => 'Basis'],
-                ['key' => 'amount_assessed', 'label' => 'Amount Assessed', 'align' => 'numeric'],
-                ['key' => 'amount_paid', 'label' => 'Amount Paid', 'align' => 'numeric'],
-                ['key' => 'remaining_balance', 'label' => 'Remaining Balance', 'align' => 'numeric'],
-                ['key' => 'official_receipt_no', 'label' => 'Official Receipt No.'],
-                ['key' => 'payment_date', 'label' => 'Payment Date'],
-                ['key' => 'verified_by', 'label' => 'Verified / Recorded By'],
-                ['key' => 'billing_status', 'label' => 'Billing Status', 'badge' => true],
-                ['key' => 'payment_status', 'label' => 'Payment Status', 'badge' => true],
+                ['key' => 'amount_assessed', 'label' => 'Amount Assessed', 'group' => 'Amounts (PHP)', 'align' => 'numeric'],
+                ['key' => 'amount_paid', 'label' => 'Amount Paid', 'group' => 'Amounts (PHP)', 'align' => 'numeric'],
+                ['key' => 'remaining_balance', 'label' => 'Remaining Balance', 'group' => 'Amounts (PHP)', 'align' => 'numeric'],
+                ['key' => 'official_receipt_no', 'label' => 'Official Receipt No.', 'group' => 'Payment Details'],
+                ['key' => 'payment_date', 'label' => 'Payment Date', 'group' => 'Payment Details'],
+                ['key' => 'verified_by', 'label' => 'Verified / Recorded By', 'group' => 'Payment Details'],
+                ['key' => 'billing_status', 'label' => 'Billing Status', 'group' => 'Status', 'badge' => true],
+                ['key' => 'payment_status', 'label' => 'Payment Status', 'group' => 'Status', 'badge' => true],
                 ['key' => 'issued_at', 'label' => 'Issued'],
             ],
             rows: $filtered,
@@ -176,6 +176,6 @@ class BillingSettlementReport implements ReportBuilder
 
     private function date(mixed $value): string
     {
-        return $value ? Carbon::parse($value)->format('d M Y') : '';
+        return $value ? Carbon::parse($value)->format('d/m/Y') : '';
     }
 }

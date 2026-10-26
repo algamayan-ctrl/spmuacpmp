@@ -255,7 +255,19 @@
     .gate-pass-detail-note { display: block; margin-top: .2rem; line-height: 1.35; }
     .gate-pass-items-table table { min-width: 0; }
     .gate-pass-items-table th:last-child, .gate-pass-items-table td:last-child { width: 72px; text-align: right; }
-    @media (max-width: 800px) { .gate-pass-progress { align-items: flex-start; } .gate-pass-progress-line { min-width: .75rem; } }
+    .gate-pass-progress-card { container: gate-progress / inline-size; }
+    @container gate-progress (max-width: 760px) {
+        .gate-pass-progress { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; overflow: visible; }
+        .gate-pass-progress-step { min-width: 0; }
+        .gate-pass-progress-dot { flex: 0 0 2rem; }
+        .gate-pass-progress-line { display: none; }
+    }
+    @media (max-width: 800px) {
+        .gate-pass-progress { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; overflow: visible; }
+        .gate-pass-progress-step { min-width: 0; }
+        .gate-pass-progress-dot { flex: 0 0 2rem; }
+        .gate-pass-progress-line { display: none; }
+    }
 </style>
 
 <x-workflow-tracker-interactions />

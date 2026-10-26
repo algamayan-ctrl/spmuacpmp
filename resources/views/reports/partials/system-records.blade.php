@@ -52,25 +52,28 @@
     <div class="report-system-table-scroll">
         <table class="report-system-table">
             <thead>
-                <tr>
-                    @foreach($table->columns as $column)
-                        <th scope="col" aria-sort="{{ $table->ariaSort($column['key']) }}" @class(['numeric' => ($column['align'] ?? null) === 'numeric'])>
-                            <a class="report-sort-link" href="{{ $table->sortUrl($column['key']) }}" data-report-table-nav>
-                                <span>{{ $column['label'] }}</span>
-                                <span class="report-sort-indicator" aria-hidden="true">
-                                    @if($table->sort === $column['key'])
-                                        {{ $table->direction === 'desc' ? '▼' : '▲' }}
-                                    @else
-                                        ↕
-                                    @endif
-                                </span>
-                            </a>
-                        </th>
-                    @endforeach
-                    @if($showLinks)
-                        <th scope="col" class="report-system-action-column">Action</th>
-                    @endif
-                </tr>
+                @foreach(App\Reports\ReportTableLayout::headers($table->columns) as $headerIndex => $headerRow)
+                    <tr>
+                        @foreach($headerRow as $cell)
+                            @php
+                                $column = $cell['column'] ?? null;
+                            @endphp
+                            <th scope="{{ $column ? 'col' : 'colgroup' }}" colspan="{{ $cell['colspan'] }}" rowspan="{{ $cell['rowspan'] }}" @if($column) aria-sort="{{ $table->ariaSort($column['key']) }}" @endif @class(['numeric' => ($column['align'] ?? null) === 'numeric'])>
+                                @if($column)
+                                    <a class="report-sort-link" aria-label="Sort by {{ $column['label'] }}" href="{{ $table->sortUrl($column['key']) }}" data-report-table-nav>
+                                        <span>{{ $cell['label'] }}</span>
+                                        <span class="report-sort-indicator" aria-hidden="true">{{ $table->sort === $column['key'] ? ($table->direction === 'desc' ? '▼' : '▲') : '↕' }}</span>
+                                    </a>
+                                @else
+                                    {{ $cell['label'] }}
+                                @endif
+                            </th>
+                        @endforeach
+                        @if($showLinks && $headerIndex === 0)
+                            <th rowspan="{{ count(App\Reports\ReportTableLayout::headers($table->columns)) }}" scope="col" class="report-system-action-column">Action</th>
+                        @endif
+                    </tr>
+                @endforeach
             </thead>
             <tbody>
                 @forelse($records as $row)
@@ -83,7 +86,7 @@
                                 $nowrap = (bool) preg_match('/(^|_)no$|_date$|_at$|_time$/', $column['key']);
                                 $isReference = (bool) preg_match('/(^|_)(no|reference|code)$/', $column['key']);
                             @endphp
-                            <td @class(['numeric' => ($column['align'] ?? null) === 'numeric', 'report-cell-nowrap' => $nowrap])>
+                            <td @class(['numeric' => ($column['align'] ?? null) === 'numeric', 'report-cell-nowrap' => $nowrap, 'report-cell-multiline' => str_contains($value, "\n")])>
                                 @if($tone !== null && $value !== '')
                                     <span class="status-badge status-{{ $tone }}" data-status-tone="{{ $tone }}">{{ $value }}</span>
                                 @elseif($isReference && $value !== '')
@@ -115,6 +118,10 @@
             </tbody>
         </table>
     </div>
+
+    @if(isset($dataset))
+        @include('reports.document.table-notes')
+    @endif
 
     <div class="report-records-footer" aria-label="Web record navigation">
         <p class="report-records-summary" role="status" aria-live="polite">

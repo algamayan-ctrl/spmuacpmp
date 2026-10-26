@@ -6,13 +6,18 @@ use App\Enums\AccessClassification;
 use App\Enums\RequestStatus;
 use App\Models\AuditEvent;
 use App\Models\BorrowingRequest;
+use App\Models\InventoryCategory;
+use App\Models\InventoryItem;
 use App\Models\OrganizationalUnit;
 use App\Models\RequestVersion;
+use App\Models\UnitOfMeasure;
 use App\Models\User;
 use App\Reports\ReportCatalogue;
 use App\Reports\ReportExportOptions;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 /**
@@ -57,7 +62,7 @@ class ReportPageTest extends TestCase
     }
 
     /* ------------------------------------------------------------------ */
-    /* Page and builder                                                    */
+    /* Page and builder */
     /* ------------------------------------------------------------------ */
 
     public function test_reports_page_renders_the_report_builder(): void
@@ -84,11 +89,10 @@ class ReportPageTest extends TestCase
         $response->assertOk();
         $response->assertSee('Report records', false);
         $response->assertSee($record->request_no, false);
-        $response->assertSee('Reports page fixture activity', false);
+        $response->assertSee(e($record->borrower->full_name), false);
         $response->assertDontSee('Choose the report options above, then select Preview Report', false);
         $response->assertDontSee('Choose the report options above', false);
     }
-
 
     public function test_preview_button_submits_the_generated_flag_and_filters_are_visible(): void
     {
@@ -175,7 +179,7 @@ class ReportPageTest extends TestCase
     }
 
     /* ------------------------------------------------------------------ */
-    /* Module separation                                                   */
+    /* Module separation */
     /* ------------------------------------------------------------------ */
 
     public function test_reports_header_does_not_carry_audit_trail_or_delivery_buttons(): void
@@ -217,6 +221,7 @@ class ReportPageTest extends TestCase
             ->assertOk()->assertViewHas('auditMode', 'operational')
             ->assertSee('Operational Audit Trail')->assertDontSee('ICTU technical audit');
     }
+
     public function test_audit_trail_is_closed_to_everyone_but_the_spmu_head(): void
     {
         $this->get(route('reports.audit'))->assertRedirect();
@@ -230,6 +235,7 @@ class ReportPageTest extends TestCase
                 ->assertForbidden();
         }
     }
+
     public function test_spmu_administration_page_links_to_the_operational_audit_trail(): void
     {
         $this->auditEvent('SYSTEM_SETTING_UPDATED', $this->head, 'Technical fixture: setting changed.');
@@ -275,7 +281,7 @@ class ReportPageTest extends TestCase
     }
 
     /* ------------------------------------------------------------------ */
-    /* Generated report                                                    */
+    /* Generated report */
     /* ------------------------------------------------------------------ */
 
     public function test_generated_report_preview_omits_formal_provenance_metadata(): void
@@ -331,17 +337,17 @@ class ReportPageTest extends TestCase
     public function test_inventory_report_states_an_as_of_date_not_a_range(): void
     {
         /* A formal document is intentionally not rendered for a zero-record preview. */
-        $category = \App\Models\InventoryCategory::query()->create([
+        $category = InventoryCategory::query()->create([
             'category_code' => 'PAGE-INV',
             'category_name' => 'Reports Page Inventory',
             'active' => true,
         ]);
-        $measure = \App\Models\UnitOfMeasure::query()->create([
+        $measure = UnitOfMeasure::query()->create([
             'unit_code' => 'PAGE-PC',
             'unit_name' => 'Piece',
             'active' => true,
         ]);
-        \App\Models\InventoryItem::query()->create([
+        InventoryItem::query()->create([
             'category_id' => $category->id,
             'unit_id' => $measure->id,
             'unique_description' => 'Reports page inventory fixture',
@@ -412,7 +418,7 @@ class ReportPageTest extends TestCase
     }
 
     /* ------------------------------------------------------------------ */
-    /* Filters, validation, pagination                                     */
+    /* Filters, validation, pagination */
     /* ------------------------------------------------------------------ */
 
     public function test_invalid_report_type_does_not_crash_the_page(): void
@@ -535,7 +541,7 @@ class ReportPageTest extends TestCase
     }
 
     /* ------------------------------------------------------------------ */
-    /* Print and export                                                    */
+    /* Print and export */
     /* ------------------------------------------------------------------ */
 
     public function test_formal_document_shows_a_single_compact_report_scope_line(): void
@@ -609,10 +615,9 @@ class ReportPageTest extends TestCase
         $response->assertDontSee('<aside', false);
 
         /* Print is not paginated: every record is on the page. */
-        $this->assertSame(
-            12,
-            substr_count($response->getContent(), 'Reports page fixture activity')
-        );
+        $document = new \DOMDocument;
+        @$document->loadHTML($response->getContent());
+        $this->assertSame(12, (new \DOMXPath($document))->query('//table[@class="doc-table"]/tbody/tr')->length);
     }
 
     public function test_csv_export_is_recorded_in_the_audit_trail(): void
@@ -639,7 +644,7 @@ class ReportPageTest extends TestCase
     }
 
     /* ------------------------------------------------------------------ */
-    /* Fixture                                                             */
+    /* Fixture */
     /* ------------------------------------------------------------------ */
 
     private function auditEvent(string $action, User $actor, string $reason): AuditEvent
@@ -651,7 +656,7 @@ class ReportPageTest extends TestCase
             'record_id' => $actor->id,
             'occurred_at' => now(),
             'reason' => $reason,
-            'correlation_id' => (string) \Illuminate\Support\Str::uuid(),
+            'correlation_id' => (string) Str::uuid(),
         ]);
     }
 
@@ -825,13 +830,13 @@ class ReportPageTest extends TestCase
                 'record_id' => $this->head->id,
                 'occurred_at' => $now->copy()->subMinutes($index),
                 'reason' => 'Audit trail 500-row display cap fixture.',
-                'correlation_id' => (string) \Illuminate\Support\Str::uuid(),
+                'correlation_id' => (string) Str::uuid(),
                 'created_at' => $now,
                 'updated_at' => $now,
             ];
         }
 
-        \Illuminate\Support\Facades\DB::table('audit_events')->insert($rows);
+        DB::table('audit_events')->insert($rows);
 
         /* The display cap only ever hides rows; every inserted row is still stored. */
         $trail = $this->actingAs($this->head)
@@ -841,6 +846,6 @@ class ReportPageTest extends TestCase
             ->assertViewHas('events', fn ($events) => $events->total() === 510 && $events->count() > 0 && $events->count() < 510 && $events->hasMorePages());
         $trail->assertSee('Showing latest '.$trail->viewData('events')->count().' of 510 total records.', false);
 
-        $this->assertSame(510, \App\Models\AuditEvent::query()->count());
+        $this->assertSame(510, AuditEvent::query()->count());
     }
 }

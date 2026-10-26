@@ -85,11 +85,10 @@
 .approval-queue-no-results h2 { font-size: 15px; }
 
 html[data-theme="dark"] .approval-queue { --approval-blue: #72b7f4; }
-html[data-theme="dark"] .approval-queue-page.is-active,
 
 @media (max-width: 760px) {
     .approval-queue .approval-queue-heading { gap: 12px; margin-bottom: 14px; }
-    .approval-queue-filters { grid-template-columns: minmax(0, 1fr); padding: 14px; }
+    .approval-queue-filters, .approval-queue-filters.is-verification { grid-template-columns: minmax(0, 1fr); padding: 14px; }
     .approval-queue-footer { align-items: flex-start; padding: 14px; }
     .approval-queue-pagination { margin-left: 0; }
     .approval-queue-empty { min-height: 320px; padding: 34px 16px; }

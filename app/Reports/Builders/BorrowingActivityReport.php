@@ -9,7 +9,9 @@ use App\Reports\ReportBuilder;
 use App\Reports\ReportCatalogue;
 use App\Reports\ReportDataset;
 use App\Reports\ReportFilters;
-use App\Support\OrganizationalStructure;
+use App\Reports\RequestReceiptTiming;
+use App\Services\AnalyticsService;
+use App\Support\ReportAffiliation;
 use Illuminate\Support\Collection;
 
 /**
@@ -37,7 +39,7 @@ class BorrowingActivityReport implements ReportBuilder
          */
         $excluded = array_map(
             static fn (RequestStatus $status): string => $status->value,
-            \App\Services\AnalyticsService::excludedFromActivity()
+            AnalyticsService::excludedFromActivity()
         );
 
         $borrower = $filters->get('borrower');
@@ -52,7 +54,7 @@ class BorrowingActivityReport implements ReportBuilder
                 $join->on('request_versions.request_id', '=', 'borrowing_requests.id')
                     ->on('request_versions.version_no', '=', 'borrowing_requests.current_version_no');
             })
-            ->with(['borrower', 'currentVersion', 'custody'])
+            ->with(['borrower', 'currentVersion.items', 'custody'])
             ->where(function ($scope) use ($filters, $explicitClosedOutcome): void {
                 $scope->whereBetween('request_versions.submitted_at', [$filters->from, $filters->to]);
 
@@ -89,19 +91,25 @@ class BorrowingActivityReport implements ReportBuilder
                 [$statusCode, $statusLabel] = OperationalStatus::forRequest($request);
                 $version = $request->currentVersion;
 
-                return [
+                return array_merge([
                     '_status_code' => $statusCode,
                     '_borrower_user_id' => (int) $request->borrower_user_id,
-                    '_division_code' => \App\Support\ReportAffiliation::divisionCode($version),
-                    '_office_unit' => \App\Support\ReportAffiliation::employeeUnit($version),
+                    '_division_code' => ReportAffiliation::divisionCode($version),
+                    '_office_unit' => ReportAffiliation::employeeUnit($version),
                     '_link' => route('requests.show', $request),
                     '_request_id' => $request->id,
                     '_tone_status' => self::statusTone($statusCode),
 
                     'request_no' => (string) $request->request_no,
                     'borrower' => (string) ($request->borrower?->full_name ?? ''),
-                    'division' => \App\Support\ReportAffiliation::division($version),
-                    'office_unit' => \App\Support\ReportAffiliation::display($version),
+                    'division' => ReportAffiliation::division($version),
+                    'office_unit' => ReportAffiliation::display($version),
+                    'affiliation' => implode("\n", array_filter(array_unique([
+                        ReportAffiliation::display($version),
+                        ReportAffiliation::division($version),
+                    ]))),
+                    'requested_equipment' => $version?->items->map(fn ($item): string => trim($item->requested_quantity.' '.$item->unit_snapshot).' - '.$item->description_snapshot
+                    )->implode("\n") ?? '',
                     'purpose_event' => (string) ($version?->purpose_event ?? ''),
                     'schedule_date' => $this->date(
                         $version?->schedule_date ?: $version?->needed_from
@@ -112,7 +120,7 @@ class BorrowingActivityReport implements ReportBuilder
                     'status' => OperationalStatus::label($statusCode, $statusLabel),
                     'filed_at' => $this->dateTime($version?->submitted_at ?: $request->created_at),
                     'approved_at' => $this->dateTime($request->final_approved_at),
-                ];
+                ], RequestReceiptTiming::fields($version?->submitted_at, $request->custody?->released_at));
             })
             ->when(
                 $division !== null,
@@ -138,19 +146,25 @@ class BorrowingActivityReport implements ReportBuilder
             reportKey: 'borrowing',
             label: ReportCatalogue::definition('borrowing')['label'],
             columns: [
-                ['key' => 'request_no', 'label' => 'Request No.'],
-                ['key' => 'borrower', 'label' => 'Borrower'],
-                ['key' => 'division', 'label' => 'Division'],
-                ['key' => 'office_unit', 'label' => 'Office / Unit / External Company'],
-                ['key' => 'purpose_event', 'label' => 'Event / Purpose'],
-                ['key' => 'schedule_date', 'label' => 'Schedule Date'],
-                ['key' => 'return_date', 'label' => 'Expected Return'],
-                ['key' => 'status', 'label' => 'Status', 'badge' => true],
-                ['key' => 'filed_at', 'label' => 'Filed'],
-                ['key' => 'approved_at', 'label' => 'SPMU Approved'],
+                ['key' => 'request_no', 'label' => 'Control No.', 'width' => 124],
+                ['key' => 'borrower', 'label' => 'Name', 'width' => 88],
+                ['key' => 'affiliation', 'label' => 'Office / Unit / Colleges / Division', 'width' => 137],
+                ['key' => 'requested_equipment', 'label' => 'Requested Equipment', 'width' => 118],
+                ['key' => 'schedule_date', 'label' => 'Dates Needed From (DD/MM/YYYY)', 'heading' => 'From (DD/MM/YYYY)', 'group' => 'Dates Needed', 'width' => 60],
+                ['key' => 'return_date', 'label' => 'Dates Needed To (DD/MM/YYYY)', 'heading' => 'To (DD/MM/YYYY)', 'group' => 'Dates Needed', 'width' => 60],
+                ['key' => 'received_date', 'label' => 'Received Date', 'heading' => 'Date', 'group' => 'Received', 'width' => 60],
+                ['key' => 'received_time', 'label' => 'Received Time', 'heading' => 'Time', 'group' => 'Received', 'width' => 48],
+                ['key' => 'released_date', 'label' => 'Released Date', 'heading' => 'Date', 'group' => 'Released', 'width' => 60],
+                ['key' => 'released_time', 'label' => 'Released Time', 'heading' => 'Time', 'group' => 'Released', 'width' => 48],
+                ['key' => 'total_time_allocated', 'label' => 'Total Time Allocated', 'width' => 64],
+                ['key' => 'status', 'label' => 'Remarks', 'badge' => true, 'width' => 73],
             ],
             rows: $rows,
             summary: $this->summarize($rows),
+            meta: ['table_notes' => [
+                'Received = request submitted to SPMU. Total Time Allocated = actual release minus receipt of the current request version (calendar elapsed time, to the minute).',
+                'Dates: DD/MM/YYYY. Times: '.config('app.timezone').'. A dash (-) means not recorded or not yet released; duration is unavailable if either timestamp is missing or release precedes receipt.',
+            ]],
         );
     }
 
@@ -210,7 +224,7 @@ class BorrowingActivityReport implements ReportBuilder
 
     private function date(mixed $value): string
     {
-        return $value ? $value->format('d M Y') : '';
+        return $value ? $value->format('d/m/Y') : '-';
     }
 
     private function dateTime(mixed $value): string

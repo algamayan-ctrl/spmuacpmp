@@ -2074,3 +2074,10 @@ dialog.report-options-dialog[open] > form::after {
 }
 /* SPMU-COMPACT-REPORTS END */
 </style>
+
+<style>
+.report-cell-multiline { white-space: pre-line; }
+.report-system-table thead th { vertical-align: middle; border: 1px solid var(--border, #ddd); }
+.report-system-records-card > .doc-table-notes { padding: 12px 18px; color: var(--muted, #555); font-size: 12px; }
+.report-system-records-card > .doc-table-notes p { margin: 3px 0; }
+</style>

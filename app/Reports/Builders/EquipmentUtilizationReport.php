@@ -8,7 +8,6 @@ use App\Reports\ReportCatalogue;
 use App\Reports\ReportDataset;
 use App\Reports\ReportFilters;
 use App\Support\OrganizationalStructure;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -152,14 +151,15 @@ class EquipmentUtilizationReport implements ReportBuilder
             ['key' => 'item', 'label' => 'Item'],
             ['key' => 'category', 'label' => 'Category'],
             ['key' => 'unit', 'label' => 'Unit'],
-            ['key' => 'released_quantity', 'label' => 'Released Qty', 'align' => 'numeric'],
-            ['key' => 'transactions', 'label' => 'Number of Releases', 'align' => 'numeric'],
+            ['key' => 'released_quantity', 'label' => 'Released Qty', 'group' => 'Utilization', 'align' => 'numeric'],
+            ['key' => 'transactions', 'label' => 'Number of Releases', 'group' => 'Utilization', 'align' => 'numeric'],
         ];
 
         foreach ($divisionCodes as $code) {
             $columns[] = [
                 'key' => 'division_'.strtolower($code),
                 'label' => OrganizationalStructure::shortLabel($code),
+                'group' => 'Released Quantity by Division',
                 'align' => 'numeric',
             ];
         }

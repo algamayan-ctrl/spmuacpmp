@@ -34,13 +34,13 @@
     data-category="{{ strtolower($categoryName) }}"
     data-premises="{{ $item->off_campus_allowed ? 'off-campus' : 'on-campus' }}"
 >
-    <td class="col-number" data-row-number></td>
+    <td class="col-number" data-label="No." data-row-number></td>
 
-    <td class="col-id">
+    <td class="col-id" data-label="Item ID">
         <span class="borrower-item-id">{{ $itemUiId }}</span>
     </td>
 
-    <td class="col-description">
+    <td class="col-description" data-label="Description">
         <span class="borrower-item-title">{{ $item->unique_description }}</span>
 
         <span class="borrower-description" data-description>
@@ -65,15 +65,15 @@
         </span>
     </td>
 
-    <td class="col-category">{{ $categoryName }}</td>
+    <td class="col-category" data-label="Category">{{ $categoryName }}</td>
 
-    <td class="col-unit">{{ $unitName }}</td>
+    <td class="col-unit" data-label="Unit">{{ $unitName }}</td>
 
-    <td class="col-quantity is-numeric">
+    <td class="col-quantity is-numeric" data-label="Available">
         <span class="borrower-quantity">{{ $available }}</span>
     </td>
 
-    <td class="col-premises">
+    <td class="col-premises" data-label="Premises">
         <span class="borrower-premises">
             {{ $item->off_campus_allowed ? 'Off-campus eligible' : 'On-campus only' }}
         </span>

@@ -4,11 +4,12 @@ namespace App\Reports\Builders;
 
 use App\Enums\ApprovalStage;
 use App\Models\BorrowingRequest;
+use App\Models\RequestSupportingDocument;
 use App\Reports\ReportBuilder;
 use App\Reports\ReportCatalogue;
 use App\Reports\ReportDataset;
 use App\Reports\ReportFilters;
-use App\Support\OrganizationalStructure;
+use App\Support\ReportAffiliation;
 use Illuminate\Support\Collection;
 
 /**
@@ -105,7 +106,7 @@ class OffCampusGatePassReport implements ReportBuilder
 
                 $requestLetter = $currentDocuments?->firstWhere(
                     'document_type',
-                    \App\Models\RequestSupportingDocument::TYPE_REQUEST_LETTER
+                    RequestSupportingDocument::TYPE_REQUEST_LETTER
                 );
 
                 $ptcDocument = $isStudentActivity
@@ -113,7 +114,7 @@ class OffCampusGatePassReport implements ReportBuilder
                         ?->where('is_current', true)
                         ->firstWhere(
                             'document_type',
-                            \App\Models\RequestSupportingDocument::TYPE_PERMISSION_TO_CONDUCT
+                            RequestSupportingDocument::TYPE_PERMISSION_TO_CONDUCT
                         )
                     : null;
 
@@ -122,8 +123,8 @@ class OffCampusGatePassReport implements ReportBuilder
                     '_off_campus' => $isOffCampus,
                     '_student_activity' => $isStudentActivity,
                     '_gate_pass_status' => $gatePassState,
-                    '_division_code' => \App\Support\ReportAffiliation::divisionCode($version),
-                    '_office_unit' => \App\Support\ReportAffiliation::employeeUnit($version),
+                    '_division_code' => ReportAffiliation::divisionCode($version),
+                    '_office_unit' => ReportAffiliation::employeeUnit($version),
                     '_link' => route('requests.show', $request),
                     '_request_id' => $request->id,
                     '_tone_gate_pass_status' => match ($gatePassState) {
@@ -136,8 +137,8 @@ class OffCampusGatePassReport implements ReportBuilder
                     'request_no' => (string) $request->request_no,
                     'custody_no' => (string) ($custody?->custody_no ?? ''),
                     'borrower' => (string) ($request->borrower?->full_name ?? ''),
-                    'division' => \App\Support\ReportAffiliation::division($version),
-                    'office_unit' => \App\Support\ReportAffiliation::display($version),
+                    'division' => ReportAffiliation::division($version),
+                    'office_unit' => ReportAffiliation::display($version),
                     'purpose_event' => (string) ($version?->purpose_event ?? ''),
                     'off_campus' => $isOffCampus ? 'Yes' : 'No',
                     'location' => (string) ($version?->location ?? ''),
@@ -196,15 +197,15 @@ class OffCampusGatePassReport implements ReportBuilder
                 ['key' => 'purpose_event', 'label' => 'Activity / Purpose'],
                 ['key' => 'off_campus', 'label' => 'Off-Campus'],
                 ['key' => 'location', 'label' => 'Destination / Location'],
-                ['key' => 'request_letter', 'label' => 'Borrowing Request Letter'],
-                ['key' => 'student_activity', 'label' => 'Student Activity'],
-                ['key' => 'ptc_required', 'label' => 'PTC Required'],
-                ['key' => 'ptc_on_file', 'label' => 'PTC Submitted'],
-                ['key' => 'verification', 'label' => 'AO Verification'],
-                ['key' => 'decision', 'label' => 'Admin Decision'],
-                ['key' => 'gate_pass_status', 'label' => 'Gate Pass Status', 'badge' => true],
-                ['key' => 'gate_pass_verified_at', 'label' => 'Gate Pass Verified'],
-                ['key' => 'released_at', 'label' => 'Physically Released'],
+                ['key' => 'request_letter', 'label' => 'Borrowing Request Letter', 'group' => 'Supporting Documents'],
+                ['key' => 'student_activity', 'label' => 'Student Activity', 'group' => 'Supporting Documents'],
+                ['key' => 'ptc_required', 'label' => 'PTC Required', 'group' => 'Supporting Documents'],
+                ['key' => 'ptc_on_file', 'label' => 'PTC Submitted', 'group' => 'Supporting Documents'],
+                ['key' => 'verification', 'label' => 'AO Verification', 'group' => 'Verification and Release'],
+                ['key' => 'decision', 'label' => 'Admin Decision', 'group' => 'Verification and Release'],
+                ['key' => 'gate_pass_status', 'label' => 'Gate Pass Status', 'group' => 'Verification and Release', 'badge' => true],
+                ['key' => 'gate_pass_verified_at', 'label' => 'Gate Pass Verified', 'group' => 'Verification and Release'],
+                ['key' => 'released_at', 'label' => 'Physically Released', 'group' => 'Verification and Release'],
             ],
             rows: $rows,
             summary: [
@@ -232,6 +233,6 @@ class OffCampusGatePassReport implements ReportBuilder
 
     private function dateTime(mixed $value): string
     {
-        return $value ? $value->format('d M Y, g:i A') : '';
+        return $value ? $value->format('d/m/Y, g:i A') : '';
     }
 }
