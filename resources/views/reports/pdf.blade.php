@@ -12,7 +12,7 @@
     $scopeSummary = implode(' · ', array_column(App\Reports\ReportScopeFormatter::rows($appliedFilters), 'value'));
     $margins = $exportOptions->marginsInPoints();
     $periodMode = App\Reports\ReportCatalogue::periodMode($dataset->reportKey);
-    $fontSize = $exportOptions->fontSize ?: 8.4;
+    $fontSize = $exportOptions->fontSize ?: App\Reports\ReportTableLayout::fontSize($dataset->columns);
 @endphp
 <!doctype html>
 <html lang="en">
@@ -51,7 +51,7 @@
     table.doc-table thead { display: table-row-group; }
     @endif
     table.doc-table th {
-        padding: 4pt 4pt;
+        padding: 4pt 2pt;
         background: #f2f2f2;
         border: 0.6pt solid #999;
         font-size: {{ max(6, $fontSize - 0.9) }}pt;
@@ -59,8 +59,10 @@
         text-align: center;
         vertical-align: middle;
         text-transform: uppercase;
+        overflow-wrap: break-word;
+        word-wrap: break-word;
     }
-    table.doc-table td { padding: 3.5pt 4pt; border: 0.6pt solid #bbb; vertical-align: top; white-space: pre-line; overflow-wrap: break-word; }
+    table.doc-table td { padding: 3.5pt 3pt; border: 0.6pt solid #bbb; vertical-align: top; white-space: pre-line; overflow-wrap: break-word; }
     table.doc-table td.numeric, table.doc-table th.numeric { text-align: right; }
     .doc-table-notes { margin-top: 8pt; font-size: 7pt; }
     .doc-table-notes p { margin: 2pt 0; }

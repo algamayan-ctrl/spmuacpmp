@@ -45,7 +45,9 @@ amounts, findings and workflow states. Their column metadata declares the groups
 shared layout code supplies all HTML, PDF, Word and Excel header geometry.
 Record dates use DD/MM/YYYY. Period filters and population rules are unchanged.
 
-Legal landscape with 12 mm margins is the default to fit the wide tables. A4,
+Legal landscape with 12 mm margins is the default to fit the wide tables. Automatic
+font sizing and column widths allow longer numeric headings and timestamps to wrap
+within their cells; reports with more than sixteen columns use a compact font. A4,
 Letter, orientation, font size, margins and the optional summary remain available.
 PDF and Word repeat the complete grouped header when the table spans pages.
 The PDF reserves space for its numbered institutional footer. Print uses a

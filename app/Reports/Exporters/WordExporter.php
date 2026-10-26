@@ -148,7 +148,7 @@ class WordExporter
 
     private function addTable(mixed $section, ReportDataset $dataset, ReportExportOptions $options): void
     {
-        $bodyFontSize = $options->fontSize ?: 8.4;
+        $bodyFontSize = $options->fontSize ?: ReportTableLayout::fontSize($dataset->columns);
         $headerFontSize = max(6.0, $bodyFontSize - 1.0);
 
         $table = $section->addTable([

@@ -5,6 +5,11 @@ namespace App\Reports;
 /** Shared column geometry and grouped headings for screen and every document exporter. */
 final class ReportTableLayout
 {
+    public static function fontSize(array $columns): float
+    {
+        return count($columns) > 16 ? 7.5 : 8.4;
+    }
+
     /** @return list<list<array<string, mixed>>> */
     public static function headers(array $columns): array
     {
@@ -26,7 +31,7 @@ final class ReportTableLayout
 
                 $bottom[] = ['label' => $column['heading'] ?? $column['label'], 'colspan' => 1, 'rowspan' => 1, 'index' => $index, 'column' => $column];
             } else {
-                $top[] = ['label' => $column['label'], 'colspan' => 1, 'rowspan' => $grouped ? 2 : 1, 'index' => $index, 'column' => $column];
+                $top[] = ['label' => $column['heading'] ?? ($column['key'] === 'borrower' ? 'Name' : $column['label']), 'colspan' => 1, 'rowspan' => $grouped ? 2 : 1, 'index' => $index, 'column' => $column];
             }
         }
 
@@ -42,9 +47,9 @@ final class ReportTableLayout
             }
 
             return match (true) {
-                ($column['align'] ?? '') === 'numeric' => 52,
+                ($column['align'] ?? '') === 'numeric' => max(52, min(100, max(array_map('mb_strlen', preg_split('/\s+/', $column['label']))) * 8.5)),
                 (bool) preg_match('/(^|_)(item|equipment|property|description|remarks|purpose|office|basis|location)/', $column['key']) => 110,
-                (bool) preg_match('/_at$|_date$/', $column['key']) => 80,
+                (bool) preg_match('/_at$|_date$/', $column['key']) => 100,
                 default => 76,
             };
         }, $columns);

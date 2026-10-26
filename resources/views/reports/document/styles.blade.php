@@ -13,7 +13,7 @@
 .doc-meta dt::after { content: " :"; }
 .doc-meta dd { margin: 0; }
 .doc-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 11.2px; }
-.doc-table th { padding: 7px 5px; text-align: center; vertical-align: middle; background: #f0f0f0; border: 1px solid #8c8c8c; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+.doc-table th { padding: 7px 3px; text-align: center; vertical-align: middle; background: #f0f0f0; border: 1px solid #8c8c8c; font-size: 10px; font-weight: 700; text-transform: uppercase; }
 .doc-table td { padding: 8px 6px; border: 1px solid #8c8c8c; vertical-align: top; color: #111; white-space: pre-line; overflow-wrap: anywhere; }
 .doc-table th { overflow-wrap: anywhere; }
 .doc-table td.numeric, .doc-table th.numeric { text-align: right; font-variant-numeric: tabular-nums; }
