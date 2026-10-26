@@ -68,6 +68,14 @@ html[data-theme="dark"] .borrower-inventory-page.is-active { color: var(--navy-9
 @media (max-width: 900px) {
     .borrower-inventory-filters { grid-template-columns: minmax(0, 1fr); }
 }
+@media (max-width: 700px) {
+    /* The shared mobile table layout uses labeled rows. This class is on the
+       table itself, so its desktop minimum must also be reset here. */
+    .borrower-inventory .borrower-inventory-table { display: block; min-width: 0; }
+    .borrower-inventory .borrower-inventory-table td { grid-template-columns: 88px minmax(0, 1fr); gap: 6px 10px; padding: 7px 0; text-align: left; overflow-wrap: anywhere; }
+    .borrower-inventory .borrower-inventory-table td > * { grid-column: 2; min-width: 0; justify-self: start; }
+    .borrower-inventory .borrower-inventory-table td.col-number { color: var(--text-muted); }
+}
 @media (max-width: 620px) {
     .borrower-inventory-card { padding: 14px; }
     .borrower-inventory-summary { align-items: flex-start; }

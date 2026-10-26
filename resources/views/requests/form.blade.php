@@ -195,9 +195,12 @@
         --cr-danger: #a62f2f;
         --cr-success: #237a45;
         display: grid;
+        grid-template-columns: minmax(0, 1fr);
         gap: 16px;
         width: 100%;
     }
+
+    .create-request-ui > * { min-width: 0; }
 
     .create-request-heading {
         align-items: flex-start;
@@ -1456,7 +1459,7 @@
 
             <div class="review-summary-grid">
                 <div class="review-summary-field">
-                    <span>Purpose of Borrowing</span>
+                    <span>Event</span>
                     <strong id="summary-purpose">&mdash;</strong>
                 </div>
                 <div class="review-summary-field">

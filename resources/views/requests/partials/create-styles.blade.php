@@ -60,7 +60,7 @@
 #request-form .create-request-ui .selected-items-header { margin: 16px 0 8px; }
 #request-form .create-request-ui .selected-items-header h3 { font-size: 13px; font-weight: 750; color: var(--heading); }
 #request-form .create-request-ui .selected-count { min-height: 30px; padding: 5px 14px; color: var(--text-secondary); background: var(--surface-subtle); border-color: var(--border); font-size: 12px; }
-#request-form .create-request-ui .selected-items-table { overflow-x: auto; border: 1px solid var(--border); border-radius: 9px; box-shadow: 0 1px 3px rgba(16, 42, 67, .06); }
+#request-form .create-request-ui .selected-items-table { min-width: 0; max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; border: 1px solid var(--border); border-radius: 9px; box-shadow: 0 1px 3px rgba(16, 42, 67, .06); }
 #request-form .create-request-ui #selected-items-table { width: 100%; min-width: 720px; margin: 0; border-collapse: collapse; table-layout: fixed; }
 #request-form .create-request-ui #selected-items-table th { padding: 12px 18px; color: #fff; background: #08244b; font-size: 11px; font-weight: 750; letter-spacing: 0; border: 0; }
 #request-form .create-request-ui #selected-items-table th:nth-child(1) { width: 40%; }

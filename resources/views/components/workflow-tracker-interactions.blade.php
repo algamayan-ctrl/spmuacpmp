@@ -82,7 +82,11 @@
         color: var(--text, #e2e8f0);
     }
 
-    /* REQUEST TRACKER FINAL RESPONSIVE POLISH */
+    /* Use the card's available width, including when the desktop sidebar is
+       expanded. Explicit row flow prevents extra implicit columns after wrap. */
+    .request-tracker {
+        container: request-progress / inline-size;
+    }
 
     .request-tracker__scroll {
         width: 100% !important;
@@ -99,6 +103,8 @@
     .request-tracker__rail {
         width: 100% !important;
         min-width: 0 !important;
+        grid-auto-flow: row;
+        grid-auto-columns: auto;
         grid-template-columns: repeat(var(--request-tracker-step-count, 8), minmax(0, 1fr)) !important;
         column-gap: 8px !important;
     }
@@ -133,7 +139,8 @@
         min-height: 2.5em !important;
         max-width: 100%;
         white-space: normal !important;
-        overflow-wrap: anywhere;
+        overflow-wrap: normal;
+        word-break: normal;
         font-size: 11.5px !important;
         line-height: 1.25;
     }
@@ -153,31 +160,29 @@
         box-shadow: 0 0 0 4px var(--surface-elevated, #fff), 0 0 0 6px color-mix(in srgb, var(--interactive, #0863db) 16%, transparent) !important;
     }
 
-    /*
-     * Tablet: wrap into two clean rows instead of horizontal scrolling.
-     */
+    /* A sequential list keeps every label readable, with no connectors jumping
+       from the end of one row to the beginning of another. Also a safe fallback
+       for browsers without container queries. */
     @media (max-width: 900px) {
-        .request-tracker__rail {
-            grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-            row-gap: 28px !important;
-        }
-
-        .request-tracker__step::before,
-        .request-tracker__step::after {
-            max-width: 100% !important;
-        }
+        .request-tracker .request-tracker__rail { grid-template-columns: minmax(0, 1fr) !important; gap: 16px !important; }
+        .request-tracker .request-tracker__step { display: grid; grid-template-columns: 38px minmax(0, 1fr); align-items: center; gap: 14px; text-align: left; }
+        .request-tracker .request-tracker__marker { margin: 0 !important; }
+        .request-tracker .request-tracker__copy { justify-items: start; text-align: left; }
+        .request-tracker .request-tracker__copy strong { max-width: none; min-height: 0 !important; }
+        .request-tracker .request-tracker__step::after { display: none !important; }
     }
-
-    /*
-     * Mobile: two milestones per row.
-     */
+    @container request-progress (max-width: 860px) {
+        .request-tracker .request-tracker__rail { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 16px !important; }
+        .request-tracker__step { display: grid; grid-template-columns: 38px minmax(0, 1fr); align-items: center; gap: 14px; text-align: left; }
+        .request-tracker__marker { margin: 0 !important; }
+        .request-tracker__copy { justify-items: start; text-align: left; }
+        .request-tracker__copy strong { max-width: none !important; min-height: 0 !important; }
+        .request-tracker__step::after { display: none !important; }
+    }
+    @container request-progress (max-width: 520px) {
+        .request-tracker .request-tracker__rail { grid-template-columns: minmax(0, 1fr) !important; }
+    }
     @media (max-width: 620px) {
-        .request-tracker__rail {
-            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-            column-gap: 14px !important;
-            row-gap: 26px !important;
-        }
-
         .workflow-tracker-floating-tooltip {
             max-width: min(240px, calc(100vw - 24px));
         }

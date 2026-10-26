@@ -122,6 +122,11 @@
         open = Boolean(open && mobileSidebar.matches);
         document.body.classList.toggle('sidebar-open', open);
         mobileToggle.setAttribute('aria-expanded', String(open));
+        sidebar.inert = mobileSidebar.matches && !open;
+        if (mobileSidebar.matches) sidebar.setAttribute('aria-hidden', String(!open));
+        else sidebar.removeAttribute('aria-hidden');
+        const stage = document.querySelector('.app-stage');
+        if (stage) stage.inert = open;
 
         if (open) {
             sidebar.querySelector('[data-sidebar-close], a')?.focus();
