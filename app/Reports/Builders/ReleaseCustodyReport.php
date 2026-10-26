@@ -7,7 +7,7 @@ use App\Reports\ReportBuilder;
 use App\Reports\ReportCatalogue;
 use App\Reports\ReportDataset;
 use App\Reports\ReportFilters;
-use App\Support\OrganizationalStructure;
+use App\Support\ReportAffiliation;
 use Illuminate\Support\Collection;
 
 /**
@@ -80,8 +80,8 @@ class ReleaseCustodyReport implements ReportBuilder
                     '_early_returned' => $custody->returns->contains(
                         fn ($return): bool => (string) $return->return_type === 'EARLY'
                     ),
-                    '_division_code' => \App\Support\ReportAffiliation::divisionCode($version),
-                    '_office_unit' => \App\Support\ReportAffiliation::employeeUnit($version),
+                    '_division_code' => ReportAffiliation::divisionCode($version),
+                    '_office_unit' => ReportAffiliation::employeeUnit($version),
                     '_item_ids' => $custody->lines
                         ->map(fn ($line) => $line->requestItem?->inventory_item_id)
                         ->filter()
@@ -100,8 +100,8 @@ class ReleaseCustodyReport implements ReportBuilder
                     'custody_no' => (string) $custody->custody_no,
                     'request_no' => (string) ($custody->request?->request_no ?? ''),
                     'borrower' => (string) ($custody->borrower?->full_name ?? ''),
-                    'division' => \App\Support\ReportAffiliation::division($version),
-                    'office_unit' => \App\Support\ReportAffiliation::display($version),
+                    'division' => ReportAffiliation::division($version),
+                    'office_unit' => ReportAffiliation::display($version),
                     'equipment' => $custody->lines
                         ->map(fn ($line) => $line->requestItem?->description_snapshot)
                         ->filter()
@@ -167,12 +167,12 @@ class ReleaseCustodyReport implements ReportBuilder
                 ['key' => 'division', 'label' => 'Division'],
                 ['key' => 'office_unit', 'label' => 'Office / Unit / External Company'],
                 ['key' => 'equipment', 'label' => 'Equipment'],
-                ['key' => 'prepared_at', 'label' => 'Preparation Confirmed'],
-                ['key' => 'scheduled_release_at', 'label' => 'Pickup Scheduled'],
-                ['key' => 'released_at', 'label' => 'Physically Released'],
-                ['key' => 'released_by', 'label' => 'Released By'],
-                ['key' => 'released_quantity', 'label' => 'Released Qty', 'align' => 'numeric'],
-                ['key' => 'outstanding_quantity', 'label' => 'Outstanding Qty', 'align' => 'numeric'],
+                ['key' => 'prepared_at', 'label' => 'Preparation Confirmed', 'group' => 'Release'],
+                ['key' => 'scheduled_release_at', 'label' => 'Pickup Scheduled', 'group' => 'Release'],
+                ['key' => 'released_at', 'label' => 'Physically Released', 'group' => 'Release'],
+                ['key' => 'released_by', 'label' => 'Released By', 'group' => 'Release'],
+                ['key' => 'released_quantity', 'label' => 'Released Qty', 'group' => 'Quantity', 'align' => 'numeric'],
+                ['key' => 'outstanding_quantity', 'label' => 'Outstanding Qty', 'group' => 'Quantity', 'align' => 'numeric'],
                 ['key' => 'due_at', 'label' => 'Expected Return'],
                 ['key' => 'closed_at', 'label' => 'Closed'],
                 ['key' => 'status', 'label' => 'Custody Status', 'badge' => true],
@@ -214,11 +214,11 @@ class ReleaseCustodyReport implements ReportBuilder
 
     private function date(mixed $value): string
     {
-        return $value ? $value->format('d M Y') : '';
+        return $value ? $value->format('d/m/Y') : '';
     }
 
     private function dateTime(mixed $value): string
     {
-        return $value ? $value->format('d M Y, g:i A') : '';
+        return $value ? $value->format('d/m/Y, g:i A') : '';
     }
 }

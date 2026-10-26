@@ -8,11 +8,15 @@ use App\Models\BorrowingRequest;
 use App\Models\OrganizationalUnit;
 use App\Models\RequestVersion;
 use App\Models\User;
+use App\Reports\ReportCatalogue;
 use App\Reports\ReportExportOptions;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
+use Illuminate\Testing\TestResponse;
 use PhpOffice\PhpSpreadsheet\IOFactory as SpreadsheetReader;
 use PhpOffice\PhpWord\IOFactory as WordReader;
+use Tests\Concerns\ReadsReportCsv;
 use Tests\TestCase;
 
 /**
@@ -25,6 +29,7 @@ use Tests\TestCase;
  */
 class ReportExportTest extends TestCase
 {
+    use ReadsReportCsv;
     use RefreshDatabase;
 
     private User $head;
@@ -57,7 +62,7 @@ class ReportExportTest extends TestCase
     }
 
     /* ------------------------------------------------------------------ */
-    /* Supported formats                                                   */
+    /* Supported formats */
     /* ------------------------------------------------------------------ */
 
     public function test_only_formats_the_application_can_produce_are_offered(): void
@@ -102,7 +107,7 @@ class ReportExportTest extends TestCase
 
         $this->assertStringContainsString('CAMARINES SUR POLYTECHNIC COLLEGES', $text);
         $this->assertStringContainsString('BORROWING ACTIVITY REPORT', $text);
-        $this->assertStringContainsString('Export fixture activity', $text);
+        $this->assertStringContainsString('Export Fixture Borrower', $text);
 
         @unlink($file);
     }
@@ -125,7 +130,7 @@ class ReportExportTest extends TestCase
 
         foreach ($sheet->getRowIterator() as $row) {
             foreach ($row->getCellIterator() as $cell) {
-                if ($cell->getValue() === 'Export fixture activity') {
+                if ($cell->getValue() === 'Export Fixture Borrower') {
                     $found = true;
                 }
             }
@@ -154,7 +159,7 @@ class ReportExportTest extends TestCase
             }
 
             if (($cells[0] ?? null) === 'Total requests') {
-                $total = $cells[1] ?? null;
+                $total = $cells[3] ?? null;
             }
         }
 
@@ -172,10 +177,10 @@ class ReportExportTest extends TestCase
         $response->assertOk();
 
         $csv = $response->streamedContent();
-        $lines = array_values(array_filter(explode("\n", trim($csv))));
+        $lines = $this->reportCsvRows($csv);
 
         /* First line is the header row: no seal, no provenance preamble. */
-        $this->assertStringContainsString('Request No.', $lines[0]);
+        $this->assertSame('Control No.', $lines[0][0]);
         $this->assertStringNotContainsString('CAMARINES SUR', $csv);
         $this->assertStringNotContainsString('Prepared by', $csv);
         $this->assertCount(2, $lines);
@@ -192,12 +197,12 @@ class ReportExportTest extends TestCase
                 'academic_period' => 'month',
             ]))
             ->assertOk()
-            ->assertSee('Export fixture activity', false)
+            ->assertSee('Export Fixture Borrower', false)
             ->assertSee('window.print()', false);
     }
 
     /* ------------------------------------------------------------------ */
-    /* Same dataset across every format                                    */
+    /* Same dataset across every format */
     /* ------------------------------------------------------------------ */
 
     public function test_exports_are_not_limited_to_the_ten_row_web_preview_page(): void
@@ -206,13 +211,11 @@ class ReportExportTest extends TestCase
             $this->request('ACADEMIC', 'College of Computer Studies');
         }
 
-        $csvLines = array_values(array_filter(
-            explode("\n", trim($this->export('csv')->streamedContent()))
-        ));
+        $csvLines = $this->reportCsvRows($this->export('csv')->streamedContent());
         $this->assertCount(13, $csvLines);
 
         $wordFile = $this->save($this->export('docx')->getContent(), 'docx');
-        $this->assertSame(12, substr_count($this->wordText($wordFile), 'Export fixture activity'));
+        $this->assertSame(12, substr_count($this->wordText($wordFile), 'Export Fixture Borrower'));
         @unlink($wordFile);
 
         $xlsxFile = $this->save($this->export('xlsx')->getContent(), 'xlsx');
@@ -221,7 +224,7 @@ class ReportExportTest extends TestCase
 
         foreach ($sheet->getRowIterator() as $row) {
             foreach ($row->getCellIterator() as $cell) {
-                if ($cell->getValue() === 'Export fixture activity') {
+                if ($cell->getValue() === 'Export Fixture Borrower') {
                     $records++;
                 }
             }
@@ -238,9 +241,7 @@ class ReportExportTest extends TestCase
         }
 
         /* CSV: one header row plus one row per record. */
-        $csvLines = array_values(array_filter(
-            explode("\n", trim($this->export('csv')->streamedContent()))
-        ));
+        $csvLines = $this->reportCsvRows($this->export('csv')->streamedContent());
         $this->assertCount(4, $csvLines);
 
         /* XLSX: the same three records reach the sheet. */
@@ -251,7 +252,7 @@ class ReportExportTest extends TestCase
 
         foreach ($sheet->getRowIterator() as $row) {
             foreach ($row->getCellIterator() as $cell) {
-                if ($cell->getValue() === 'Export fixture activity') {
+                if ($cell->getValue() === 'Export Fixture Borrower') {
                     $records++;
                 }
             }
@@ -264,13 +265,13 @@ class ReportExportTest extends TestCase
         $wordFile = $this->save($this->export('docx')->getContent(), 'docx');
         $this->assertSame(
             3,
-            substr_count($this->wordText($wordFile), 'Export fixture activity')
+            substr_count($this->wordText($wordFile), 'Export Fixture Borrower')
         );
         @unlink($wordFile);
     }
 
     /* ------------------------------------------------------------------ */
-    /* Options, naming and authorization                                   */
+    /* Options, naming and authorization */
     /* ------------------------------------------------------------------ */
 
     public function test_filename_names_the_report_and_the_period_it_covers(): void
@@ -323,7 +324,7 @@ class ReportExportTest extends TestCase
 
         $this->assertStringContainsString('Prepared by', $text);
         $this->assertStringContainsString('No signature is required', $text);
-        $this->assertStringContainsString('Export fixture activity', $text);
+        $this->assertStringContainsString('Export Fixture Borrower', $text);
         $this->assertStringNotContainsString('Total requests', $text);
 
         @unlink($file);
@@ -332,14 +333,14 @@ class ReportExportTest extends TestCase
     public function test_automatic_orientation_resolves_to_the_report_catalogue_default(): void
     {
         $options = ReportExportOptions::fromRequest(
-            \Illuminate\Http\Request::create('/reports/export', 'GET', [
+            Request::create('/reports/export', 'GET', [
                 'format' => 'pdf',
                 'orientation' => 'automatic',
             ]),
             'borrowing'
         );
 
-        $this->assertSame(\App\Reports\ReportCatalogue::orientation('borrowing'), $options->orientation);
+        $this->assertSame(ReportCatalogue::orientation('borrowing'), $options->orientation);
     }
 
     public function test_export_requires_the_same_authorization_as_the_report_page(): void
@@ -347,6 +348,7 @@ class ReportExportTest extends TestCase
         $borrower = User::factory()->create([
             'access_classification' => AccessClassification::BorrowerOnly,
             'organizational_unit_id' => $this->unit->id,
+            'full_name' => 'Export Fixture Borrower',
         ]);
 
         /* A hidden button is not access control: the URL itself is refused. */
@@ -367,10 +369,10 @@ class ReportExportTest extends TestCase
     }
 
     /* ------------------------------------------------------------------ */
-    /* Fixture                                                             */
+    /* Fixture */
     /* ------------------------------------------------------------------ */
 
-    private function export(string $format): \Illuminate\Testing\TestResponse
+    private function export(string $format): TestResponse
     {
         return $this->actingAs($this->head)
             ->withSession(['active_workspace' => 'SPMU'])
@@ -410,6 +412,7 @@ class ReportExportTest extends TestCase
         $borrower = User::factory()->create([
             'access_classification' => AccessClassification::BorrowerOnly,
             'organizational_unit_id' => $this->unit->id,
+            'full_name' => 'Export Fixture Borrower',
         ]);
 
         $request = BorrowingRequest::query()->create([
@@ -425,7 +428,7 @@ class ReportExportTest extends TestCase
         RequestVersion::query()->create([
             'request_id' => $request->id,
             'version_no' => 1,
-            'purpose_event' => 'Export fixture activity',
+            'purpose_event' => 'Export Fixture Borrower',
             'location' => 'Campus',
             'division_code' => $division,
             'office_unit' => $unit,

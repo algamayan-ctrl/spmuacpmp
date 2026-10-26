@@ -79,8 +79,8 @@ final class ReportExportOptions
         $format = strtolower((string) $request->input('format', 'pdf'));
         $format = array_key_exists($format, self::FORMATS) ? $format : 'pdf';
 
-        $pageSize = strtoupper((string) $request->input('page_size', 'A4'));
-        $pageSize = array_key_exists($pageSize, self::PAGE_SIZES) ? $pageSize : 'A4';
+        $pageSize = strtoupper((string) $request->input('page_size', 'LEGAL'));
+        $pageSize = array_key_exists($pageSize, self::PAGE_SIZES) ? $pageSize : 'LEGAL';
 
         /*
          * Each report declares the orientation its columns actually fit in;
@@ -91,8 +91,8 @@ final class ReportExportOptions
             ? $orientationChoice
             : ReportCatalogue::orientation($reportKey);
 
-        $preset = strtolower((string) $request->input('margins', 'normal'));
-        $preset = array_key_exists($preset, self::MARGIN_PRESETS) ? $preset : 'normal';
+        $preset = strtolower((string) $request->input('margins', 'narrow'));
+        $preset = array_key_exists($preset, self::MARGIN_PRESETS) ? $preset : 'narrow';
 
         $margins = self::MARGIN_PRESETS[$preset]['mm'];
 

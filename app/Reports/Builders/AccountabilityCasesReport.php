@@ -204,13 +204,13 @@ class AccountabilityCasesReport implements ReportBuilder
                 ['key' => 'borrower', 'label' => 'Borrower'],
                 ['key' => 'division', 'label' => 'Division'],
                 ['key' => 'office_unit', 'label' => 'Office / Unit / External Company'],
-                ['key' => 'case_type', 'label' => 'Case Type', 'badge' => true],
-                ['key' => 'finding', 'label' => 'Finding'],
-                ['key' => 'affected_item', 'label' => 'Affected Item'],
-                ['key' => 'affected_quantity', 'label' => 'Qty', 'align' => 'numeric'],
-                ['key' => 'offense_sanction', 'label' => 'Offense / Sanction'],
-                ['key' => 'restriction_status', 'label' => 'Restriction Status', 'badge' => true],
-                ['key' => 'final_outcome', 'label' => 'Accountability Status', 'badge' => true],
+                ['key' => 'case_type', 'label' => 'Case Type', 'group' => 'Case Findings', 'badge' => true],
+                ['key' => 'finding', 'label' => 'Finding', 'group' => 'Case Findings'],
+                ['key' => 'affected_item', 'label' => 'Affected Item', 'group' => 'Case Findings'],
+                ['key' => 'affected_quantity', 'label' => 'Qty', 'group' => 'Case Findings', 'align' => 'numeric'],
+                ['key' => 'offense_sanction', 'label' => 'Offense / Sanction', 'group' => 'Resolution'],
+                ['key' => 'restriction_status', 'label' => 'Restriction Status', 'group' => 'Resolution', 'badge' => true],
+                ['key' => 'final_outcome', 'label' => 'Accountability Status', 'group' => 'Resolution', 'badge' => true],
                 ['key' => 'date_reported', 'label' => 'Date Reported'],
             ],
             rows: $filtered,
@@ -304,7 +304,7 @@ class AccountabilityCasesReport implements ReportBuilder
             'COMPLIANCE_REQUIRED' => 'Compliance Required',
             'COMPLIANCE_RSLDDP_PENDING' => 'Compliance Verification (Legacy)',
             'F2F_PROCESSING' => 'For F2F Processing',
-                    'RSLDDP_AWAITING_UPLOAD' => 'For F2F Processing (Legacy)',
+            'RSLDDP_AWAITING_UPLOAD' => 'For F2F Processing (Legacy)',
             'RSLDDP_FOR_ACCOUNTING_PROCESSING' => 'For Accounting Processing (Legacy)',
             'RSLDDP_PAYMENT_REQUIRED' => 'Payment Required (Legacy)',
             'RSLDDP_DISPOSITION_PENDING' => 'For F2F Processing (Legacy)',
@@ -326,6 +326,6 @@ class AccountabilityCasesReport implements ReportBuilder
 
     private function date(mixed $value): string
     {
-        return $value ? Carbon::parse($value)->format('d M Y') : '';
+        return $value ? Carbon::parse($value)->format('d/m/Y') : '';
     }
 }

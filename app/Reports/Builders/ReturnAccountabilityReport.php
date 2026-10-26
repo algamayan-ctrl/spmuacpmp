@@ -10,7 +10,7 @@ use App\Reports\ReportCatalogue;
 use App\Reports\ReportDataset;
 use App\Reports\ReportFilters;
 use App\Services\ReturnMetricsService;
-use App\Support\OrganizationalStructure;
+use App\Support\ReportAffiliation;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -205,8 +205,8 @@ class ReturnAccountabilityReport implements ReportBuilder
                     '_completed_in_period' => false,
                     '_accountability_open' => $accountabilityOpen,
                     '_accountability_in_period' => $accountabilityInPeriodIds->contains($custody->id),
-                    '_division_code' => \App\Support\ReportAffiliation::divisionCode($version),
-                    '_office_unit' => \App\Support\ReportAffiliation::employeeUnit($version),
+                    '_division_code' => ReportAffiliation::divisionCode($version),
+                    '_office_unit' => ReportAffiliation::employeeUnit($version),
                     '_link' => route('custody.show', $custody),
                     '_returned_at_raw' => $returnedAt,
                     '_tone_return_status' => match ($returnState) {
@@ -220,8 +220,8 @@ class ReturnAccountabilityReport implements ReportBuilder
                     'custody_no' => (string) $custody->custody_no,
                     'request_no' => (string) ($custody->request?->request_no ?? ''),
                     'borrower' => (string) ($custody->borrower?->full_name ?? ''),
-                    'division' => \App\Support\ReportAffiliation::division($version),
-                    'office_unit' => \App\Support\ReportAffiliation::display($version),
+                    'division' => ReportAffiliation::division($version),
+                    'office_unit' => ReportAffiliation::display($version),
                     'released_at' => $this->dateTime($custody->released_at),
                     'due_at' => $this->date($due),
                     'last_return_at' => $this->dateTime($returnedAt),
@@ -308,20 +308,20 @@ class ReturnAccountabilityReport implements ReportBuilder
                 ['key' => 'borrower', 'label' => 'Borrower'],
                 ['key' => 'division', 'label' => 'Division'],
                 ['key' => 'office_unit', 'label' => 'Office / Unit / External Company'],
-                ['key' => 'released_at', 'label' => 'Released'],
-                ['key' => 'due_at', 'label' => 'Expected Return'],
-                ['key' => 'last_return_at', 'label' => 'Returned'],
-                ['key' => 'return_status', 'label' => 'Return Status', 'badge' => true],
-                ['key' => 'released_quantity', 'label' => 'Released Qty', 'align' => 'numeric'],
-                ['key' => 'returned_quantity', 'label' => 'Returned Qty', 'align' => 'numeric'],
-                ['key' => 'outstanding_quantity', 'label' => 'Outstanding Qty', 'align' => 'numeric'],
-                ['key' => 'overdue_started_at', 'label' => 'Overdue Since'],
-                ['key' => 'overdue_status', 'label' => 'Overdue Case'],
-                ['key' => 'incidents', 'label' => 'Incidents', 'align' => 'numeric'],
-                ['key' => 'open_incidents', 'label' => 'Open Incidents', 'align' => 'numeric'],
-                ['key' => 'confirmed_violations', 'label' => 'Confirmed Violations', 'align' => 'numeric'],
-                ['key' => 'accountability', 'label' => 'Accountability Status', 'badge' => true],
-                ['key' => 'remarks', 'label' => 'Remarks'],
+                ['key' => 'released_at', 'label' => 'Released', 'group' => 'Return'],
+                ['key' => 'due_at', 'label' => 'Expected Return', 'group' => 'Return'],
+                ['key' => 'last_return_at', 'label' => 'Returned', 'group' => 'Return'],
+                ['key' => 'return_status', 'label' => 'Return Status', 'group' => 'Return', 'badge' => true],
+                ['key' => 'released_quantity', 'label' => 'Released Qty', 'group' => 'Quantity', 'align' => 'numeric'],
+                ['key' => 'returned_quantity', 'label' => 'Returned Qty', 'group' => 'Quantity', 'align' => 'numeric'],
+                ['key' => 'outstanding_quantity', 'label' => 'Outstanding Qty', 'group' => 'Quantity', 'align' => 'numeric'],
+                ['key' => 'overdue_started_at', 'label' => 'Overdue Since', 'group' => 'Accountability'],
+                ['key' => 'overdue_status', 'label' => 'Overdue Case', 'group' => 'Accountability'],
+                ['key' => 'incidents', 'label' => 'Incidents', 'group' => 'Accountability', 'align' => 'numeric'],
+                ['key' => 'open_incidents', 'label' => 'Open Incidents', 'group' => 'Accountability', 'align' => 'numeric'],
+                ['key' => 'confirmed_violations', 'label' => 'Confirmed Violations', 'group' => 'Accountability', 'align' => 'numeric'],
+                ['key' => 'accountability', 'label' => 'Accountability Status', 'group' => 'Accountability', 'badge' => true],
+                ['key' => 'remarks', 'label' => 'Remarks', 'group' => 'Accountability'],
             ],
             rows: $rows,
             summary: [
@@ -353,11 +353,11 @@ class ReturnAccountabilityReport implements ReportBuilder
 
     private function date(mixed $value): string
     {
-        return $value ? Carbon::parse($value)->format('d M Y') : '';
+        return $value ? Carbon::parse($value)->format('d/m/Y') : '';
     }
 
     private function dateTime(mixed $value): string
     {
-        return $value ? Carbon::parse($value)->format('d M Y, g:i A') : '';
+        return $value ? Carbon::parse($value)->format('d/m/Y, g:i A') : '';
     }
 }

@@ -77,8 +77,10 @@ final class ReportRecordTable
 
             /* Blank cells stay at the bottom whichever way the column is sorted. */
             $visible = $visible->sort(function (array $a, array $b) use ($sort, $sign): int {
-                $left = self::blank($a[$sort] ?? null) ? null : (string) $a[$sort];
-                $right = self::blank($b[$sort] ?? null) ? null : (string) $b[$sort];
+                $left = $a['_sort_'.$sort] ?? ($a[$sort] ?? null);
+                $right = $b['_sort_'.$sort] ?? ($b[$sort] ?? null);
+                $left = self::blank($left) ? null : (string) $left;
+                $right = self::blank($right) ? null : (string) $right;
 
                 if ($left === null || $right === null) {
                     return ($left === null) <=> ($right === null);
@@ -218,7 +220,7 @@ final class ReportRecordTable
 
     private static function date(string $value): ?int
     {
-        foreach (['!d M Y, g:i A', '!d M Y', '!Y-m-d H:i:s', '!Y-m-d'] as $format) {
+        foreach (['!d/m/Y, g:i A', '!d/m/Y', '!H:i:s', '!d M Y, g:i A', '!d M Y', '!Y-m-d H:i:s', '!Y-m-d'] as $format) {
             $date = DateTimeImmutable::createFromFormat($format, $value);
 
             if ($date !== false && $date->format(ltrim($format, '!')) === $value) {

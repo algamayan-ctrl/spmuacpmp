@@ -7,7 +7,7 @@ use App\Reports\ReportBuilder;
 use App\Reports\ReportCatalogue;
 use App\Reports\ReportDataset;
 use App\Reports\ReportFilters;
-use App\Support\OrganizationalStructure;
+use App\Support\ReportAffiliation;
 use Illuminate\Support\Collection;
 
 /**
@@ -101,8 +101,8 @@ class LaundryOperationsReport implements ReportBuilder
                 return [
                     '_borrower_user_id' => (int) ($custody?->borrower_user_id ?? 0),
                     '_status' => (string) $job->status,
-                    '_division_code' => \App\Support\ReportAffiliation::divisionCode($version),
-                    '_office_unit' => \App\Support\ReportAffiliation::employeeUnit($version),
+                    '_division_code' => ReportAffiliation::divisionCode($version),
+                    '_office_unit' => ReportAffiliation::employeeUnit($version),
                     '_item_ids' => $itemIds,
                     '_link' => $custody ? route('custody.show', $custody) : null,
                     '_tone_laundry_status' => match ((string) $job->status) {
@@ -114,8 +114,8 @@ class LaundryOperationsReport implements ReportBuilder
                     'custody_no' => (string) ($custody?->custody_no ?? ''),
                     'request_no' => (string) ($custody?->request?->request_no ?? ''),
                     'borrower' => (string) ($custody?->borrower?->full_name ?? ''),
-                    'division' => \App\Support\ReportAffiliation::division($version),
-                    'office_unit' => \App\Support\ReportAffiliation::display($version),
+                    'division' => ReportAffiliation::division($version),
+                    'office_unit' => ReportAffiliation::display($version),
                     'linen_items' => $items->implode('; '),
                     'issued_at' => $this->dateTime($custody?->released_at),
                     'issued_quantity' => $this->number($issued),
@@ -177,17 +177,17 @@ class LaundryOperationsReport implements ReportBuilder
                 ['key' => 'office_unit', 'label' => 'Office / Unit / External Company'],
                 ['key' => 'linen_items', 'label' => 'Linen'],
                 ['key' => 'issued_at', 'label' => 'Issue Date'],
-                ['key' => 'issued_quantity', 'label' => 'Issued Qty', 'align' => 'numeric'],
-                ['key' => 'received_quantity', 'label' => 'Received Qty', 'align' => 'numeric'],
-                ['key' => 'completed_quantity', 'label' => 'Completed Qty', 'align' => 'numeric'],
-                ['key' => 'outstanding_quantity', 'label' => 'Outstanding Qty', 'align' => 'numeric'],
-                ['key' => 'laundry_status', 'label' => 'Laundry Status', 'badge' => true],
-                ['key' => 'worker_name', 'label' => 'Laundry Personnel'],
-                ['key' => 'received_at', 'label' => 'Received by Laundry'],
-                ['key' => 'completed_at', 'label' => 'Completed'],
-                ['key' => 'form_verified', 'label' => 'Form Verified'],
-                ['key' => 'form_verified_by', 'label' => 'Verified By'],
-                ['key' => 'available_again_at', 'label' => 'Available Again'],
+                ['key' => 'issued_quantity', 'label' => 'Issued Qty', 'group' => 'Quantities', 'align' => 'numeric'],
+                ['key' => 'received_quantity', 'label' => 'Received Qty', 'group' => 'Quantities', 'align' => 'numeric'],
+                ['key' => 'completed_quantity', 'label' => 'Completed Qty', 'group' => 'Quantities', 'align' => 'numeric'],
+                ['key' => 'outstanding_quantity', 'label' => 'Outstanding Qty', 'group' => 'Quantities', 'align' => 'numeric'],
+                ['key' => 'laundry_status', 'label' => 'Laundry Status', 'group' => 'Laundry Processing', 'badge' => true],
+                ['key' => 'worker_name', 'label' => 'Laundry Personnel', 'group' => 'Laundry Processing'],
+                ['key' => 'received_at', 'label' => 'Received by Laundry', 'group' => 'Laundry Processing'],
+                ['key' => 'completed_at', 'label' => 'Completed', 'group' => 'Laundry Processing'],
+                ['key' => 'form_verified', 'label' => 'Form Verified', 'group' => 'Verification'],
+                ['key' => 'form_verified_by', 'label' => 'Verified By', 'group' => 'Verification'],
+                ['key' => 'available_again_at', 'label' => 'Available Again', 'group' => 'Verification'],
             ],
             rows: $rows,
             summary: [
@@ -209,6 +209,6 @@ class LaundryOperationsReport implements ReportBuilder
 
     private function dateTime(mixed $value): string
     {
-        return $value ? $value->format('d M Y, g:i A') : '';
+        return $value ? $value->format('d/m/Y, g:i A') : '';
     }
 }

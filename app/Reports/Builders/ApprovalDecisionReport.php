@@ -9,7 +9,7 @@ use App\Reports\ReportBuilder;
 use App\Reports\ReportCatalogue;
 use App\Reports\ReportDataset;
 use App\Reports\ReportFilters;
-use App\Support\OrganizationalStructure;
+use App\Support\ReportAffiliation;
 use Illuminate\Support\Collection;
 
 /**
@@ -96,8 +96,8 @@ class ApprovalDecisionReport implements ReportBuilder
                     '_borrower_user_id' => (int) $request->borrower_user_id,
                     '_verification' => $verificationState,
                     '_decision' => $decisionState,
-                    '_division_code' => \App\Support\ReportAffiliation::divisionCode($version),
-                    '_office_unit' => \App\Support\ReportAffiliation::employeeUnit($version),
+                    '_division_code' => ReportAffiliation::divisionCode($version),
+                    '_office_unit' => ReportAffiliation::employeeUnit($version),
                     '_link' => route('requests.show', $request),
                     '_request_id' => $request->id,
                     '_tone_verification' => match ($verificationState) {
@@ -116,8 +116,8 @@ class ApprovalDecisionReport implements ReportBuilder
 
                     'request_no' => (string) $request->request_no,
                     'borrower' => (string) ($request->borrower?->full_name ?? ''),
-                    'division' => \App\Support\ReportAffiliation::division($version),
-                    'office_unit' => \App\Support\ReportAffiliation::display($version),
+                    'division' => ReportAffiliation::division($version),
+                    'office_unit' => ReportAffiliation::display($version),
                     'version_no' => (string) ($version?->version_no ?? ''),
                     'submitted_at' => $this->dateTime($version?->submitted_at ?: $request->created_at),
                     'verification' => $this->verificationLabel($verificationState),
@@ -167,12 +167,12 @@ class ApprovalDecisionReport implements ReportBuilder
                 ['key' => 'office_unit', 'label' => 'Office / Unit / External Company'],
                 ['key' => 'version_no', 'label' => 'Version', 'align' => 'numeric'],
                 ['key' => 'submitted_at', 'label' => 'Submitted'],
-                ['key' => 'verification', 'label' => 'AO Verification', 'badge' => true],
-                ['key' => 'verified_by', 'label' => 'Verified By'],
-                ['key' => 'verified_at', 'label' => 'Verified At'],
-                ['key' => 'decision', 'label' => 'Admin Decision', 'badge' => true],
-                ['key' => 'decided_by', 'label' => 'Decided By'],
-                ['key' => 'decided_at', 'label' => 'Decided At'],
+                ['key' => 'verification', 'label' => 'AO Verification', 'group' => 'AO Verification', 'badge' => true],
+                ['key' => 'verified_by', 'label' => 'Verified By', 'group' => 'AO Verification'],
+                ['key' => 'verified_at', 'label' => 'Verified At', 'group' => 'AO Verification'],
+                ['key' => 'decision', 'label' => 'Admin Decision', 'group' => 'Admin Decision', 'badge' => true],
+                ['key' => 'decided_by', 'label' => 'Decided By', 'group' => 'Admin Decision'],
+                ['key' => 'decided_at', 'label' => 'Decided At', 'group' => 'Admin Decision'],
                 ['key' => 'turnaround', 'label' => 'Review Turnaround'],
                 ['key' => 'final_status', 'label' => 'Final Request Status', 'badge' => true],
                 ['key' => 'remarks', 'label' => 'Decision Remarks'],
@@ -240,6 +240,6 @@ class ApprovalDecisionReport implements ReportBuilder
 
     private function dateTime(mixed $value): string
     {
-        return $value ? $value->format('d M Y, g:i A') : '';
+        return $value ? $value->format('d/m/Y, g:i A') : '';
     }
 }

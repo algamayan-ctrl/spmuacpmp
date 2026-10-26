@@ -3,7 +3,9 @@
 namespace Tests\Feature;
 
 use App\Enums\AccessClassification;
+use App\Enums\ApprovalStage;
 use App\Enums\RequestStatus;
+use App\Models\ApprovalStep;
 use App\Models\AuditEvent;
 use App\Models\BorrowingRequest;
 use App\Models\OrganizationalUnit;
@@ -11,9 +13,12 @@ use App\Models\RequestVersion;
 use App\Models\User;
 use App\Reports\ReportCatalogue;
 use App\Services\ReportService;
+use App\Services\UserRoleAssignmentService;
 use Carbon\Carbon;
+use Database\Seeders\RoleSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\TestResponse;
+use Tests\Concerns\ReadsReportCsv;
 use Tests\TestCase;
 
 /**
@@ -22,6 +27,7 @@ use Tests\TestCase;
  */
 class ReportSystemPreviewTest extends TestCase
 {
+    use ReadsReportCsv;
     use RefreshDatabase;
 
     private User $head;
@@ -31,7 +37,7 @@ class ReportSystemPreviewTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->seed(\Database\Seeders\RoleSeeder::class);
+        $this->seed(RoleSeeder::class);
 
         Carbon::setTestNow(Carbon::create(2026, 9, 20, 9));
 
@@ -46,7 +52,7 @@ class ReportSystemPreviewTest extends TestCase
             'access_classification' => AccessClassification::SpmuHead,
             'full_name' => 'Preview Head',
         ]);
-        app(\App\Services\UserRoleAssignmentService::class)->synchronize($this->head, AccessClassification::SpmuHead);
+        app(UserRoleAssignmentService::class)->synchronize($this->head, AccessClassification::SpmuHead);
     }
 
     protected function tearDown(): void
@@ -56,7 +62,7 @@ class ReportSystemPreviewTest extends TestCase
     }
 
     /* ------------------------------------------------------------------ */
-    /* Operational reports                                                 */
+    /* Operational reports */
     /* ------------------------------------------------------------------ */
 
     public function test_every_report_type_previews_as_system_ui_without_paper_layout(): void
@@ -94,7 +100,7 @@ class ReportSystemPreviewTest extends TestCase
         $previewRecords = collect($table->records->items())->map(fn (array $row): array => $dataset->values($row))->all();
 
         $csv = $this->asHead()->get(route('reports.export', ['type' => 'borrowing'] + $scope + ['format' => 'csv']))->assertOk();
-        $csvRows = array_map('str_getcsv', array_values(array_filter(preg_split('/\r?\n/', $csv->streamedContent()))));
+        $csvRows = $this->reportCsvRows($csv->streamedContent());
         $this->assertSame($dataset->columnLabels(), array_shift($csvRows));
         $this->assertSame($previewRecords, $csvRows);
 
@@ -177,7 +183,7 @@ class ReportSystemPreviewTest extends TestCase
         $this->assertArrayNotHasKey('per_page', $hidden);
 
         $csv = $this->asHead()->get(route('reports.export', ['type' => 'borrowing'] + $scope + ['format' => 'csv']))->assertOk();
-        $csvRows = array_map('str_getcsv', array_values(array_filter(preg_split('/\r?\n/', $csv->streamedContent()))));
+        $csvRows = $this->reportCsvRows($csv->streamedContent());
         array_shift($csvRows);
         $this->assertSame($previewRecords, $csvRows);
 
@@ -340,11 +346,11 @@ class ReportSystemPreviewTest extends TestCase
     }
 
     /* ------------------------------------------------------------------ */
-    /* Fixture                                                             */
+    /* Fixture */
     /* ------------------------------------------------------------------ */
 
     /* ------------------------------------------------------------------ */
-    /* View Record follows the request page's own authorization            */
+    /* View Record follows the request page's own authorization */
     /* ------------------------------------------------------------------ */
 
     public function test_view_record_is_only_offered_for_requests_the_viewer_may_open(): void
@@ -426,9 +432,9 @@ class ReportSystemPreviewTest extends TestCase
 
     private function step(BorrowingRequest $request, int $sequence, string $decision): void
     {
-        \App\Models\ApprovalStep::query()->create([
+        ApprovalStep::query()->create([
             'request_version_id' => $request->currentVersion()->firstOrFail()->id,
-            'stage_code' => \App\Enums\ApprovalStage::Spmu,
+            'stage_code' => ApprovalStage::Spmu,
             'sequence_no' => $sequence,
             'received_at' => '2026-09-03 10:00:00',
             'decision' => $decision,

@@ -200,7 +200,7 @@ class ReportDateRangeTest extends TestCase
         $unit = OrganizationalUnit::query()->firstOrCreate(['unit_code' => 'RANGE'], [
             'unit_name' => 'Report range unit', 'unit_type' => 'OFFICE', 'active' => true,
         ]);
-        $borrower = User::factory()->create(['organizational_unit_id' => $unit->id]);
+        $borrower = User::factory()->create(['organizational_unit_id' => $unit->id, 'full_name' => $purpose]);
         $request = BorrowingRequest::query()->create([
             'request_no' => 'BR-RANGE-'.fake()->unique()->numberBetween(100000, 999999),
             'borrower_user_id' => $borrower->id, 'accountable_unit_id' => $unit->id,
@@ -217,7 +217,7 @@ class ReportDateRangeTest extends TestCase
 
     public function test_previous_semester_resolves_to_the_period_before_the_active_one(): void
     {
-        $range = fn (string $year, string $code, string $from, string $to, string $status) => \App\Models\AcademicPeriod::query()->create([
+        $range = fn (string $year, string $code, string $from, string $to, string $status) => AcademicPeriod::query()->create([
             'academic_year' => $year, 'term_code' => $code, 'term_name' => ucfirst(strtolower($code)).' Semester',
             'start_date' => $from, 'end_date' => $to, 'status' => $status,
         ]);

@@ -68,7 +68,7 @@
                         <span>Page Size</span>
                         <select id="export-page-size" name="page_size">
                             @foreach(ReportExportOptions::PAGE_SIZES as $value => $label)
-                                <option value="{{ $value }}">{{ $label }}</option>
+                                <option value="{{ $value }}" @selected($value === 'LEGAL')>{{ $label }}</option>
                             @endforeach
                         </select>
                     </label>
@@ -123,7 +123,7 @@
                         <span>Margins</span>
                         <select id="export-margins" name="margins" data-export-margins>
                             @foreach(ReportExportOptions::MARGIN_PRESETS as $value => $preset)
-                                <option value="{{ $value }}">{{ $preset['label'] }}</option>
+                                <option value="{{ $value }}" @selected($value === 'narrow')>{{ $preset['label'] }}</option>
                             @endforeach
                         </select>
                     </label>

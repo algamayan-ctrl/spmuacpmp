@@ -27,15 +27,14 @@
 @endphp
 
 <table class="doc-table">
+    <colgroup>
+        @foreach(App\Reports\ReportTableLayout::widths($columns) as $width)
+            <col style="width: {{ $width }}%">
+        @endforeach
+        @if($showLinkColumn)<col>@endif
+    </colgroup>
     <thead>
-        <tr>
-            @foreach($columns as $column)
-                <th @class(['numeric' => ($column['align'] ?? null) === 'numeric'])>{{ $column['label'] }}</th>
-            @endforeach
-            @if($showLinkColumn)
-                <th class="doc-table-action-column">Action</th>
-            @endif
-        </tr>
+        @include('reports.document.table-head')
     </thead>
 
     <tbody>
