@@ -82,12 +82,23 @@
 .laundry-tab.is-selected .laundry-tab-count { background: rgba(255, 255, 255, .2); color: #fff; }
 .laundry-operations .laundry-toolbar {
     display: grid;
-    grid-template-columns: minmax(260px, 1fr) minmax(170px, 220px) minmax(150px, 190px);
+    /* Search, status/result, sort and the Apply/Clear buttons stay on one row. */
+    grid-template-columns: minmax(220px, 1fr) minmax(160px, 210px) minmax(140px, 185px) max-content;
     align-items: end;
     min-width: 0;
+    margin-top: 0;
     margin-bottom: 12px;
     padding: 12px;
     gap: 10px;
+}
+.laundry-toolbar .record-table-actions {
+    align-self: end;
+    justify-content: flex-end;
+    min-height: 36px;
+}
+.laundry-toolbar .record-table-actions .button {
+    min-height: 36px;
+    padding-inline: 12px;
 }
 .laundry-toolbar > label {
     display: grid;
@@ -200,7 +211,7 @@
 .laundry-filter-empty p { margin: 0; }
 .laundry-pagination { padding: 12px 16px; border-top: 1px solid var(--border); }
 @media (max-width: 1100px) {
-    .laundry-operations .laundry-toolbar { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1fr); }
+    .laundry-operations .laundry-toolbar { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, .9fr) max-content; }
     .laundry-cases-table th,
     .laundry-cases-table td { padding-inline: 9px; }
 }
@@ -210,6 +221,8 @@
 }
 @media (max-width: 760px) {
     .laundry-operations .laundry-toolbar { grid-template-columns: minmax(0, 1fr); }
+    .laundry-toolbar .record-table-actions { justify-content: flex-start; }
+    .laundry-toolbar .record-table-actions .button { flex: 1 1 auto; }
     .laundry-tabs { gap: 7px; }
     .laundry-inline-empty { padding: 30px 16px; }
     .laundry-operations { min-height: 0; }

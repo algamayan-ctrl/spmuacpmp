@@ -14,7 +14,7 @@
     </label>
     <label>Date from<input type="date" name="exception_from" value="{{ request('exception_from') }}"></label>
     <label>Date to<input type="date" name="exception_to" value="{{ request('exception_to') }}"></label>
-    <x-record-page-size name="exception_per_page" :value="$dateExceptions->perPage()" />
+    <x-record-page-size name="exception_per_page" :value="$dateExceptions->perPage()" :entries-inside="true" />
     <div class="record-table-actions">
         <button class="button primary" type="submit">Apply</button>
         <a class="button secondary" href="{{ route('policies.index', ['section' => 'special-dates']) }}">Clear</a>

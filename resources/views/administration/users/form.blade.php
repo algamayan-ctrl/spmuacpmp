@@ -346,9 +346,14 @@
                             <button type="submit" form="ictu-delete-pending-registration-form"
                                     class="button secondary ictu-delete-account-button"
                                     id="ictu-delete-pending-registration-button"
+                                    aria-describedby="ictu-pending-deletion-warning"
                                     aria-label="Delete unverified account for {{ $user->full_name }}">
                                 <x-icon name="trash" size="16" /> Delete Account
                             </button>
+                            <small id="ictu-pending-deletion-warning" class="ictu-account-action-note is-danger">
+                                <x-icon name="information" size="13" />
+                                <span>Deleting this pending account cannot be undone.</span>
+                            </small>
                         @elseif($canMaintainAccount)
                             <small class="ictu-account-action-note is-danger">
                                 <x-icon name="information" size="13" />

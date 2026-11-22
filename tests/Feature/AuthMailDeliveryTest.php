@@ -8,8 +8,11 @@ use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
+use PHPUnit\Framework\Attributes\DataProvider;
+use Symfony\Component\Mailer\Exception\TransportException;
 use Tests\TestCase;
 
 class AuthMailDeliveryTest extends TestCase
@@ -32,6 +35,51 @@ class AuthMailDeliveryTest extends TestCase
         $this->app->detectEnvironment(fn () => 'production');
         config(['mail.default' => 'failover']);
         $this->assertFalse(app(\App\Services\AuthMailTransport::class)->deliversMail());
+    }
+
+    #[DataProvider('mailTransportFailures')]
+    public function test_failed_otp_delivery_logs_only_safe_diagnostics_and_invalidates_the_code(
+        string $failure,
+        string $expectedReason,
+        ?int $expectedCode,
+    ): void {
+        config(['mail.default' => 'smtp']);
+        $user = User::factory()->unverified()->create();
+        $originalStatus = $user->account_status;
+        Mail::shouldReceive('html')->once()->andThrow(new TransportException($failure));
+        Log::spy();
+
+        $this->assertFalse(app(EmailVerificationService::class)->send($user));
+        $this->assertDatabaseMissing('email_verification_otps', ['user_id' => $user->id]);
+        $this->assertFalse($user->fresh()->hasVerifiedInstitutionalEmail());
+        $this->assertSame($originalStatus, $user->fresh()->account_status);
+
+        Log::shouldHaveReceived('warning')->once()->withArgs(function (string $message, array $context) use ($user, $expectedReason, $expectedCode): bool {
+            $this->assertSame('SPMU-ACPMP institutional email verification OTP delivery failed.', $message);
+            $this->assertSame([
+                'user_id' => $user->id,
+                'email' => $user->email,
+                'exception' => TransportException::class,
+                'mail_error' => $expectedReason,
+                'smtp_response_code' => $expectedCode,
+            ], $context);
+            $this->assertStringNotContainsString('synthetic-private-password', json_encode($context));
+            $this->assertStringNotContainsString('749203', json_encode($context));
+
+            return true;
+        });
+    }
+
+    public static function mailTransportFailures(): array
+    {
+        return [
+            'gmail authentication' => ['Failed to authenticate. Expected response code "235" but got code "535", with message "535-5.7.8 Username and Password not accepted. synthetic-private-password OTP 749203"', 'authentication_rejected', 535],
+            'smtp response without wrapper' => ['535 5.7.8 Username and Password not accepted.', 'authentication_rejected', 535],
+            'tls certificate' => ['Unable to connect with STARTTLS: certificate verify failed. synthetic-private-password OTP 749203', 'tls_failed', null],
+            'connection failure' => ['Connection could not be established: Connection refused. synthetic-private-password OTP 749203', 'connection_failed', null],
+            'smtp rejection' => ['Expected response code "250" but got code "550", with message "550 5.7.1 Message rejected"', 'smtp_rejected', 550],
+            'unclassified failure' => ['Unexpected transport failure: synthetic-private-password OTP 749203', 'transport_error', null],
+        ];
     }
 
     public function test_preview_password_reset_reports_configuration_failure_without_creating_token(): void

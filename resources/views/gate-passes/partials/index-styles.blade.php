@@ -4,6 +4,7 @@
     width: 100%;
     min-width: 0;
     max-width: 100%;
+    container: gate-pass-records / inline-size;
     color: var(--text);
     font-size: 13px;
 
@@ -21,14 +22,19 @@
 .gate-pass-browser .gate-pass-heading p:not(.eyebrow) { max-width: none; margin: 0; font-size: 12.5px; line-height: 1.4; }
 .gate-pass-browser .card { min-width: 0; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-elevated); box-shadow: var(--shadow-sm); }
 
-.gate-pass-browser .gate-pass-toolbar {
+.gate-pass-browser > #gate-pass-filters {
     display: grid;
-    grid-template-columns: minmax(0, 3fr) minmax(180px, 1fr);
-    gap: 12px;
+    flex: 0 0 auto;
+    height: auto;
+    min-height: 0;
+    grid-template-columns: minmax(0, 1.5fr) repeat(2, minmax(0, 1fr));
+    gap: 10px;
     align-items: end;
+    align-content: start;
     padding: 12px 16px;
     margin-bottom: 10px;
 }
+#gate-pass-filters > label { flex: none; gap: 0; min-width: 0; }
 .gate-pass-toolbar label {
     min-width: 0;
     margin: 0;
@@ -37,13 +43,18 @@
     font-weight: 650;
 }
 .gate-pass-toolbar .search-input-shell,
+.gate-pass-toolbar input,
 .gate-pass-toolbar select { margin-top: 7px; }
 .gate-pass-browser .gate-pass-toolbar input,
 .gate-pass-browser .gate-pass-toolbar select {
     width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
     min-height: 40px;
     font-size: 12px;
 }
+.gate-pass-browser .gate-pass-toolbar .search-input-shell input { margin-top: 0; }
+.gate-pass-browser .gate-pass-toolbar > .button { width: auto; min-width: 0; min-height: 40px; margin: 0; white-space: nowrap; }
 
 .gate-pass-browser .gate-pass-records-card { padding: 12px 16px 4px; }
 .gate-pass-records-heading { margin-bottom: 12px; }
@@ -140,16 +151,20 @@
 .gate-pass-browser .gate-pass-empty-card p { margin: 0; color: var(--text-muted); font-size: 13px; line-height: 1.5; }
 
 html[data-theme="dark"] .gate-pass-browser { --gate-pass-blue: #72b7f4; }
-@media (max-width: 1000px) {
-    .gate-pass-browser .gate-pass-toolbar { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, .8fr); }
+@container gate-pass-records (min-width: 900px) {
+    .gate-pass-browser > #gate-pass-filters {
+        grid-template-columns: minmax(180px, 2.4fr) repeat(2, minmax(135px, 1.1fr)) minmax(110px, .85fr) minmax(130px, 1fr) max-content;
+    }
+}
+@container gate-pass-records (max-width: 620px) {
+    .gate-pass-browser > #gate-pass-filters { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+    .gate-pass-toolbar > label:first-child { grid-column: 1 / -1; }
 }
 @media (max-width: 700px) {
-    .gate-pass-browser .gate-pass-toolbar { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
-    .gate-pass-toolbar > label:first-child { grid-column: 1 / -1; }
     .gate-pass-browser .gate-pass-records-card { padding-right: 12px; padding-left: 12px; }
 }
-@media (max-width: 430px) {
-    .gate-pass-browser .gate-pass-toolbar { grid-template-columns: minmax(0, 1fr); }
+@container gate-pass-records (max-width: 430px) {
+    .gate-pass-browser > #gate-pass-filters { grid-template-columns: minmax(0, 1fr); }
     .gate-pass-toolbar > label:first-child { grid-column: auto; }
 }
 

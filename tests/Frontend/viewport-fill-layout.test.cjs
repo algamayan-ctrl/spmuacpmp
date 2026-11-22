@@ -14,6 +14,7 @@ const oversightStyles = read('resources/views/custody/partials/oversight-styles.
 const borrowingsStyles = read('resources/views/custody/partials/borrowings-styles.blade.php');
 const custodyIndex = read('resources/views/custody/index.blade.php');
 const myRequestsStyles = read('resources/views/requests/partials/my-requests-styles.blade.php');
+const saoReleaseStyles = read('resources/views/custody/partials/sao-release-list-styles.blade.php');
 
 test('.app-main is a flex column that fills the viewport below the topbar', () => {
     const rule = appCss.match(/\.app-main \{[\s\S]*?\n\}/);
@@ -51,11 +52,13 @@ test('Gate Pass records: the empty panel grows, populated toolbar/table does not
     assert.match(gatePassStyles, /\.gate-pass-browser > \.gate-pass-empty-card \{ flex: 1 1 auto; \}/);
 });
 
-test('Laundry Operations: only the selected empty result grows and populated results keep their natural height', () => {
+test('Laundry Operations keeps the selected record panel full height and its pagination at the bottom', () => {
     assert.match(laundryStyles, /\.laundry-operations \{[\s\S]*?display:\s*flex;[\s\S]*?flex-direction:\s*column;[\s\S]*?flex:\s*1 1 auto;/);
     assert.doesNotMatch(laundryStyles, /\.laundry-operations > \.laundry-empty-card \{ flex: 1 1 auto; \}/);
     assert.match(laundryStyles, /\.laundry-operations \.laundry-cases-card\.is-empty \{[^}]*flex:\s*1 1 auto;/);
-    assert.match(laundryStyles, /\.laundry-operations \.laundry-cases-card:not\(\.is-empty\) \{ flex: 0 0 auto; \}/);
+    assert.match(laundryStyles, /\.laundry-operations \.laundry-cases-card:not\(\.is-empty\) \{[^}]*flex:\s*1 1 auto;/);
+    assert.match(laundryStyles, /\.laundry-operations \.laundry-cases-card:not\(\.is-empty\) > \.laundry-pagination \{[^}]*margin-top:\s*auto;/);
+    assert.match(laundryStyles, /\.laundry-operations \[hidden\] \{ display: none !important; \}/);
     assert.match(laundryStyles, /\.laundry-inline-empty \{[^}]*min-height:\s*300px;/);
     assert.match(laundryStyles, /\.laundry-completed-block \{[^}]*margin:\s*0;/);
 });
@@ -73,13 +76,13 @@ test('My Borrowings: the empty panel grows, populated toolbar/list does not', ()
     assert.doesNotMatch(borrowingsStyles, /\.borrowings-empty \{[^}]*clamp\(/);
 });
 
-test('AO Release/Return queue: an empty queue fills the remaining screen while keeping its text constrained', () => {
-    assert.match(custodyIndex, /class="content-area operational-content-area"/);
-    assert.doesNotMatch(custodyIndex, /\.app-main > \.operational-content-area\{flex:0 0 auto\}/);
-    assert.match(custodyIndex, /\.operational-content-area > \.operational-record-list\{flex:1 1 auto;[^}]*width:100%/);
-    assert.match(custodyIndex, /\.operational-record-list > \.operational-empty-card\{flex:1 1 auto;width:100%\}/);
-    assert.match(custodyIndex, /\.operational-empty-card\{[^}]*min-height:300px/);
-    assert.match(custodyIndex, /\.operational-empty-card-content\{[^}]*max-width:400px/);
+test('AO Release/Return use the active shared table empty state with constrained text', () => {
+    assert.match(custodyIndex, /@include\('custody.partials.sao-release-list'\)/);
+    assert.match(custodyIndex, /@elseif\(\$mode === 'return'\)[\s\S]*?@include\('custody.partials.sao-release-list-styles'\)/);
+    assert.match(saoReleaseStyles, /\.sao-release-browser \{[^}]*display:\s*flex;[^}]*flex-direction:\s*column;/);
+    assert.match(saoReleaseStyles, /\.sao-release-empty \{[^}]*flex:\s*1 1 auto;[^}]*min-height:\s*280px/);
+    assert.match(saoReleaseStyles, /\.sao-release-empty p \{[^}]*max-width:\s*42ch/);
+    assert.match(saoReleaseStyles, /\.sao-release-browser \[hidden\] \{ display: none !important; \}/);
 });
 
 test('AO Release queue: the empty state uses the universal operational card with a release-specific icon', () => {

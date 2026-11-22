@@ -1274,6 +1274,99 @@ html[data-theme="dark"] .sidebar-nav > a:hover .sidebar-action-count {
 }
 
 </style>
+<style id="approved-compact-sidebar">
+    #primary-sidebar .sidebar-nav {
+        gap: 3px !important;
+    }
+
+    #primary-sidebar .sidebar-nav > a {
+        min-height: 32px !important;
+        height: 32px !important;
+        max-height: none !important;
+        gap: 10px !important;
+        font-size: 11.5px !important;
+        font-weight: 500 !important;
+        line-height: 1.3 !important;
+    }
+
+    #primary-sidebar .sidebar-nav > a .nav-label {
+        font-size: inherit !important;
+        line-height: inherit !important;
+    }
+
+    #primary-sidebar .sidebar-nav > a .nav-icon {
+        width: 18px !important;
+        min-width: 18px !important;
+        height: 18px !important;
+        flex: 0 0 18px !important;
+    }
+
+    #primary-sidebar .sidebar-nav > a .nav-icon svg {
+        width: 18px !important;
+        height: 18px !important;
+    }
+
+    #primary-sidebar .sidebar-group-label {
+        margin: 4px 4px 0;
+        padding: 4px 8px 0;
+        font-size: 9px !important;
+        font-weight: 600 !important;
+        line-height: 1.4;
+        letter-spacing: .04em;
+    }
+
+    #primary-sidebar .sidebar-group-label:first-child {
+        margin-top: 0;
+        padding-top: 0;
+    }
+
+    #primary-sidebar .sidebar-nav .sidebar-subnav a {
+        min-height: 30px !important;
+        height: auto !important;
+        max-height: none !important;
+        font-size: 11px !important;
+        font-weight: 500 !important;
+        line-height: 1.3;
+    }
+
+    #primary-sidebar .sidebar-nav a.active,
+    #primary-sidebar .sidebar-nav a[aria-current="page"] {
+        font-weight: 600 !important;
+    }
+
+    @media (min-width: 1050px) {
+        html[data-sidebar-state="collapsed"] #primary-sidebar .sidebar-nav > a {
+            gap: 0 !important;
+        }
+
+        html[data-sidebar-state="collapsed"] #primary-sidebar .sidebar-group-label {
+            height: 1px;
+            min-height: 0;
+            margin: 6px 8px;
+            padding: 0;
+            overflow: hidden;
+            font-size: 0 !important;
+            line-height: 0;
+        }
+    }
+
+    @media (max-width: 1049px) {
+        #primary-sidebar .sidebar-nav > a {
+            min-height: 44px !important;
+            height: auto !important;
+            font-size: 12.5px !important;
+        }
+
+        #primary-sidebar .sidebar-group-label {
+            font-size: 10px !important;
+        }
+
+        #primary-sidebar .sidebar-nav .sidebar-subnav a {
+            min-height: 44px !important;
+            font-size: 12px !important;
+        }
+    }
+</style>
 </head>
 <body>
 <a class="skip-link" href="#main-content">Skip to main content</a>

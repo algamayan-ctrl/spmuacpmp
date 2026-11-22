@@ -15,21 +15,20 @@ const notifications = fs.readFileSync(path.join(root, 'resources/views/reports/n
 const audit = fs.readFileSync(path.join(root, 'resources/views/reports/audit.blade.php'), 'utf8');
 const reportingWorkspaceStyles = fs.readFileSync(path.join(root, 'resources/views/reports/partials/workspace-styles.blade.php'), 'utf8');
 
-// Borrower summary KPIs stay useful at zero: every card drills into its own
-// focused result/empty state instead of becoming a static look-alike.
-test('My Obligations keeps visible summary cards clickable and omits a redundant zero-action card', () => {
-  assert.match(obligations, /\['focus' => 'active'\]/);
-  assert.match(obligations, /\['focus' => 'action'\]/);
+// The current compact summary has two native links; it does not restore the old four-tile row.
+test('My Obligations keeps compact balance and borrowing-status metrics clickable, including zero states', () => {
   assert.match(obligations, /\['focus' => 'payment'\]/);
   // A blocking unresolved incident without a formal restriction drills into active cases.
   assert.match(obligations, /\['focus' => \$activeRestrictionCount > 0 \|\| ! \$borrowingBlocked \? 'status' : 'active'\]/);
-  assert.match(obligations, /if \(\$needsActionCount > 0\)\s*\{\s*\$summaryCards\[\] = \['warning', 'warning', \(string\) \$needsActionCount, 'Needs My Action'/);
-  assert.match(obligations, /class="ob-summary-card is-\{\{ \$tone \}\} is-clickable/);
-  assert.doesNotMatch(obligations, /ob-summary-card[^\n]*is-static/);
+  assert.equal((obligations.match(/<a class="ob-metric-card /g) || []).length, 2);
+  assert.equal((obligations.match(/class="ob-metric-arrow"/g) || []).length, 2);
+  assert.match(obligations, /borrowingStatus\(\(int\) auth\(\)->id\(\)\)/);
+  assert.match(obligations, /@if\(\$needsActionCount > 0\)/);
+  assert.match(obligations, /@if\(\$hasCurrentAccountability \|\| \$focus !== 'active'\)/);
+  assert.doesNotMatch(obligations, /class="ob-summary-card/);
   assert.match(obligations, /\$focusMeta = match \(\$focus\)/);
   assert.match(obligations, /id="current-obligations" class="ob-focused-results"/);
-  assert.match(obligationStyles, /\.app-main > \.ob-workspace\s*\{[\s\S]*?flex:\s*0 0 auto/);
-  assert.match(obligationStyles, /\.ob-clear-card\s*\{[\s\S]*?min-height:\s*0/);
+  assert.match(obligationStyles, /\.ob-workspace \.ob-current-status\s*\{/);
 });
 
 // Resolved history is a dedicated staff workspace tab, not permanent default-page content.

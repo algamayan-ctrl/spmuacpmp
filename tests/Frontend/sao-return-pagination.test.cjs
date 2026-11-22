@@ -8,18 +8,21 @@ const template = fs.readFileSync(
     'utf8',
 );
 
-test('SAO return records provide the same usable pagination controls as operational lists', () => {
-    assert.match(template, /@if\(\$mode === 'return' && \$custodies->isNotEmpty\(\)\)/);
-    assert.match(template, /data-operational-pagination/);
-    assert.match(template, /data-operational-page-size/);
-    assert.match(template, /data-operational-previous/);
-    assert.match(template, /data-operational-next/);
-    assert.match(template, /Showing \$\{firstIndex \+ 1\}–\$\{lastIndex\} of \$\{matches\.length\}/);
+test('Return renders the shared Release browser with the approved page sizes', () => {
+    const activeReturn = template.split("@elseif($mode === 'return')")[1].split(/\r?\n@else\r?\n/)[0];
+    assert.match(activeReturn, /data-sao-release-browser/);
+    assert.match(activeReturn, /data-release-pagination/);
+    assert.match(activeReturn, /data-release-page-size/);
+    assert.match(activeReturn, /data-release-previous/);
+    assert.match(activeReturn, /data-release-next/);
+    assert.match(activeReturn, /\[7, 15, 30, 50\]/);
+    assert.match(activeReturn, /@include\('custody.partials.sao-release-list-interactions'\)/);
 });
 
-test('return filters and sorting reset to the first page before records are shown', () => {
-    assert.match(template, /search\.addEventListener\('input', \(\) => \{ currentPage = 1; render\(\); \}\)/);
-    assert.match(template, /status\.addEventListener\('change', \(\) => \{ currentPage = 1; render\(\); \}\)/);
-    assert.match(template, /sort\.addEventListener\('change', \(\) => \{ currentPage = 1; render\(\); \}\)/);
-    assert.match(template, /pageSize\?\.addEventListener\('change', \(\) => \{ currentPage = 1; render\(\); \}\)/);
+test('Return physical status keys belong to the current table rows', () => {
+    const activeReturn = template.split("@elseif($mode === 'return')")[1].split(/\r?\n@else\r?\n/)[0];
+    assert.match(activeReturn, /data-status="\{\{ \$physicalReturnStatus\['key'\] \}\}"/);
+    assert.match(activeReturn, /data-id="\{\{ \$custody->id \}\}"/);
+    assert.match(activeReturn, /data-search=/);
+    assert.match(activeReturn, /id="operational-status"/);
 });

@@ -102,7 +102,9 @@ test('cards stretch equally, tables scroll, and smaller screens reflow', () => {
     assert.match(styles, /\.request-operational-page \.request-operational-grid\s*\{[^}]*align-items: stretch/s);
     assert.match(styles, /@media \(max-width: 1000px\)[\s\S]*grid-template-columns: minmax\(0, 1fr\)/);
     assert.match(styles, /\.request-operational-page \.table-wrap \{ overflow-x: auto/);
-    assert.match(styles, /\.request-operational-page \.request-tracker__rail\s*\{[^}]*min-width: 900px/s);
+    // The compact tracker fits its container instead of forcing the retired 900px rail.
+    assert.match(styles, /\.request-operational-page \.request-tracker__rail\s*\{[^}]*min-width:\s*0/s);
+    assert.match(styles, /\.request-operational-page \.request-tracker__rail\s*\{[^}]*grid-template-columns:\s*repeat\([^;]*minmax\(0, 1fr\)/s);
     assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
     assert.doesNotMatch(styles, /(?:^|\n)\.card\s*\{/);
 });

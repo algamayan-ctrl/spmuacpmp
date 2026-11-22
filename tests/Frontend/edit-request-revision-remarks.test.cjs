@@ -18,12 +18,16 @@ function cssRule(selector) {
     return match[1];
 }
 
-test('returned revision remarks are compact read-only content rather than a field-like box', () => {
+test('returned revision remarks remain a compact read-only warning callout with wrapping text', () => {
     const remarks = cssRule('.returned-for-revision-panel .revision-remarks');
     const copy = cssRule('.returned-for-revision-panel .revision-remarks-copy');
 
-    assert.doesNotMatch(remarks, /(?:background|border|padding)\s*:/);
+    assert.match(remarks, /padding:\s*8px 10px/);
+    assert.match(remarks, /border-left:\s*3px solid var\(--warning\)/);
     assert.doesNotMatch(remarks, /min-height\s*:/);
+    const markup = source.match(/<section class="revision-remarks"[\s\S]*?<\/section>/)?.[0] || '';
+    assert.match(markup, /<p class="revision-remarks-copy">/);
+    assert.doesNotMatch(markup, /<(?:input|textarea|select|form)\b/);
     assert.match(copy, /white-space:\s*pre-wrap/);
     assert.match(copy, /overflow-wrap:\s*anywhere/);
 });

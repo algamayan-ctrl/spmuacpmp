@@ -366,13 +366,13 @@
         </table>
     </div>
     <div class="empty-state top-gap" data-record-empty hidden><strong>No matching request records.</strong><span>Try another search term or status.</span></div>
-    @if($isActionOfficer)
+    @unless($isBorrower)
         <div class="sao-record-pagination" data-sao-record-pagination hidden>
             <div class="sao-record-pagination-meta">
                 <span class="meta" data-sao-record-range aria-live="polite"></span>
                 <label class="sr-only" for="sao-record-page-size">Request records per page</label>
                 <select id="sao-record-page-size" data-sao-record-page-size aria-label="Request records per page">
-                    @foreach([7, 15, 30, 50] as $size)<option value="{{ $size }}" @selected($size === 7)>{{ $size }} items per page</option>@endforeach
+                    @foreach([7, 15, 30, 50] as $size)<option value="{{ $size }}" @selected($size === 7)>{{ $size }} entries</option>@endforeach
                 </select>
             </div>
             <nav class="app-pagination" aria-label="Request Records pages">
@@ -381,6 +381,8 @@
                 <button class="app-pagination-link" type="button" data-sao-record-next aria-label="Next page"><x-icon name="arrow-right" size="14" /></button>
             </nav>
         </div>
+    @endunless
+    @if($isActionOfficer)
         </div>
     @endif
 
@@ -409,20 +411,7 @@
 .sao-record-results > [data-record-empty][hidden]{display:none}
 @media(max-width:600px){.sao-record-results > .sao-record-pagination{justify-content:center;padding:12px;gap:8px}.sao-record-pagination nav{gap:8px}}
 </style>
-@if($isActionOfficer)
-    @include('requests.partials.sao-record-pagination')
-@else
-<script>
-(() => {
- const rows=[...document.querySelectorAll('[data-request-record]')];
- const search=document.querySelector('[data-record-search]'); const status=document.querySelector('[data-record-status-filter]'); const sort=document.querySelector('[data-record-sort]'); const empty=document.querySelector('[data-record-empty]');
- if(!rows.length || !search || !status || !sort) return;
- const body=rows[0].parentElement;
- const render=()=>{const q=search.value.trim().toLowerCase(); const st=status.value; const ordered=[...rows].sort((a,b)=>(Number(b.dataset.created)-Number(a.dataset.created))*(sort.value==='newest'?1:-1)); ordered.forEach(r=>body.appendChild(r)); let n=0; rows.forEach(r=>{const matchesStatus=st==='all'||(st==='NEEDS_ATTENTION'?r.dataset.attention==='1':r.dataset.status===st);const show=(!q||r.dataset.search.includes(q))&&matchesStatus;r.hidden=!show;if(show)n++}); if(empty)empty.hidden=n>0;};
- [search,status,sort].forEach(el=>el.addEventListener(el===search?'input':'change',render)); render();
-})();
-</script>
-@endif
+@include('requests.partials.sao-record-pagination')
 @endunless
 
 @if($isBorrower)

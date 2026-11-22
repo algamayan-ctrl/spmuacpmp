@@ -585,7 +585,7 @@ html[data-theme="dark"] .ictu-users-filter-field :is(input,select), html[data-th
 .ictu-additional-picker-actions .ictu-add-unit-button:disabled { opacity:.48; cursor:not-allowed; }
 .ictu-form-actions { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
 .ictu-administrative-actions-row { margin-top:12px; padding:0; align-items:center; }
-.ictu-form-action-left { display:flex; align-items:center; flex-direction:row; gap:8px; min-width:0; }
+.ictu-form-action-left { display:flex; align-items:center; flex-direction:row; flex-wrap:wrap; gap:8px; min-width:0; }
 .ictu-account-action-note { display:inline-flex; align-items:center; gap:5px; max-width:100%; font-size:11px; font-weight:400; line-height:1.35; color:var(--text-muted); }
 .ictu-account-action-note .ui-icon { flex:0 0 auto; }
 .ictu-account-action-note.is-danger { color:#d92d20; }

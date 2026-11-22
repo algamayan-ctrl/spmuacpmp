@@ -23,24 +23,30 @@
         </div>
     </section>
 
-    <section class="card record-browser-toolbar gate-pass-toolbar record-table-toolbar" aria-label="Gate Pass filters">
-                <label class="record-browser-search" for="gate-pass-search">Search
-                    <span class="search-input-shell">
-                        <span class="search-input-icon" aria-hidden="true"><x-icon name="search" size="17" /></span>
-                        <input id="gate-pass-search" type="search" placeholder="Request, borrower, custody, destination..." data-gate-pass-search autocomplete="off">
-                    </span>
-                </label>
-                <label>Date from<input type="date" data-gate-pass-from></label>
-                <label>Date to<input type="date" data-gate-pass-to></label>
-                <label>Show entries<select data-gate-pass-size>@foreach([10, 25, 50, 100] as $size)<option value="{{ $size }}">{{ $size }}</option>@endforeach</select></label>
-                <label for="gate-pass-sort">Sort
-                    <select id="gate-pass-sort" data-gate-pass-sort>
-                        <option value="newest">Newest first</option>
-                        <option value="oldest">Oldest first</option>
-                    </select>
-                </label>
-                <button class="button secondary" type="button" data-gate-pass-clear>Clear</button>
-            </section>
+    <section id="gate-pass-filters" class="card record-browser-toolbar gate-pass-toolbar record-table-toolbar" aria-label="Gate Pass filters">
+        <label class="record-browser-search" for="gate-pass-search">Search
+            <span class="search-input-shell">
+                <span class="search-input-icon" aria-hidden="true"><x-icon name="search" size="17" /></span>
+                <input id="gate-pass-search" type="search" placeholder="Request, borrower, custody, destination..." data-gate-pass-search autocomplete="off">
+            </span>
+        </label>
+        <label>Date from<input type="date" data-gate-pass-from></label>
+        <label>Date to<input type="date" data-gate-pass-to></label>
+        <label>Show entries
+            <select data-gate-pass-size>
+                @foreach([7, 15, 30, 50] as $size)
+                    <option value="{{ $size }}">{{ $size }} entries</option>
+                @endforeach
+            </select>
+        </label>
+        <label for="gate-pass-sort">Sort
+            <select id="gate-pass-sort" data-gate-pass-sort>
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+            </select>
+        </label>
+        <button class="button secondary" type="button" data-gate-pass-clear>Clear</button>
+    </section>
 
     @if($gatePasses->isEmpty())
         <section class="card gate-pass-empty-card" aria-labelledby="gate-pass-empty-title">
@@ -73,8 +79,8 @@
                         @endforeach
                         <tr class="gate-pass-filter-empty" data-gate-pass-empty hidden>
                             <td colspan="6">
-                                <strong>No recorded Gate Passes match your search.</strong>
-                                <p>Try another search term.</p>
+                                <strong>No recorded Gate Passes match your filters.</strong>
+                                <p>Try another search term or date range.</p>
                                 <button class="button secondary small link-button" type="button" data-gate-pass-reset>Clear filters</button>
                             </td>
                         </tr>

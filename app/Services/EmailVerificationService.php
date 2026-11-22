@@ -150,20 +150,40 @@ HTML;
 
             return true;
         } catch (Throwable $exception) {
-            /*
-             * Do not leave an OTP active when the mail transport rejected the
-             * message. ICTU/user may request a fresh code after mail is fixed.
-             */
+            // This is the cleanup for an OTP rejected by the mail transport.
             $this->invalidate($user);
 
             Log::warning('SPMU-ACPMP institutional email verification OTP delivery failed.', [
                 'user_id' => $user->getKey(),
                 'email' => $user->email,
                 'exception' => $exception::class,
+                ...$this->mailFailureDetails($exception),
             ]);
 
             return false;
         }
+    }
+
+    // This is the function for safe OTP mail-delivery diagnostics.
+    private function mailFailureDetails(Throwable $exception): array
+    {
+        $message = strtolower($exception->getMessage());
+        $hasResponseCode = preg_match('/\bgot(?:\s+code)?\D{0,3}([45]\d{2})\b/', $message, $matches)
+            || preg_match('/\b([45]\d{2})[- ][245]\.\d{1,3}\.\d{1,3}\b/', $message, $matches);
+        $responseCode = $hasResponseCode ? (int) $matches[1] : null;
+
+        $reason = match (true) {
+            in_array($responseCode, [534, 535], true), str_contains($message, 'failed to authenticate') => 'authentication_rejected',
+            str_contains($message, 'certificate verify failed'), str_contains($message, 'enable crypto'),
+                str_contains($message, 'starttls'), str_contains($message, 'ssl operation failed') => 'tls_failed',
+            str_contains($message, 'could not be established'), str_contains($message, 'connection refused'),
+                str_contains($message, 'timed out'), str_contains($message, 'getaddrinfo'),
+                str_contains($message, 'name or service not known') => 'connection_failed',
+            $responseCode !== null => 'smtp_rejected',
+            default => 'transport_error',
+        };
+
+        return ['mail_error' => $reason, 'smtp_response_code' => $responseCode];
     }
 
     /**

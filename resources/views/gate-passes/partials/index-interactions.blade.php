@@ -4,7 +4,7 @@
     if (!root || root.dataset.gatePassInitialized === '1') return;
     const list = root.querySelector('[data-gate-pass-list]');
     const search = root.querySelector('[data-gate-pass-search]');
-    if (!list || !search) return;
+    if (!search) return;
     root.dataset.gatePassInitialized = '1';
 
     const records = [...root.querySelectorAll('[data-gate-pass-record]')];
@@ -16,7 +16,11 @@
     const numbers = root.querySelector('[data-gate-pass-page-numbers]');
     const previous = root.querySelector('[data-gate-pass-page="previous"]');
     const next = root.querySelector('[data-gate-pass-page="next"]');
-    const pageSize = Math.max(1, Number.parseInt(root.dataset.pageSize, 10) || 7);
+    const from = root.querySelector('[data-gate-pass-from]');
+    const to = root.querySelector('[data-gate-pass-to]');
+    const size = root.querySelector('[data-gate-pass-size]');
+    const pageSizes = [7, 15, 30, 50];
+    const defaultPageSize = 7;
     const actionMenus = [...root.querySelectorAll('.gate-pass-more')];
     let page = 1;
     let pageCount = 1;
@@ -70,6 +74,19 @@
     window.addEventListener('scroll', () => closeActionMenus(), true);
 
     const render = () => {
+        const startDate = from?.value || '';
+        const endDate = to?.value || '';
+        const invalidRange = startDate && endDate && startDate > endDate;
+        if (from) from.max = endDate;
+        if (to) {
+            to.min = startDate;
+            to.setCustomValidity(invalidRange ? 'Date to must be on or after Date from.' : '');
+        }
+        const requestedSize = Number(size?.value || defaultPageSize);
+        const pageSize = pageSizes.includes(requestedSize) ? requestedSize : defaultPageSize;
+        if (size) size.value = String(pageSize);
+        if (!list || !empty || !count || !pagination || !numbers || !previous || !next) return;
+
         const terms = search.value.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
         const selectedStatus = status?.value || '';
         const oldestFirst = sort.value === 'oldest';
@@ -78,8 +95,13 @@
             return oldestFirst ? difference : -difference;
         }).filter(record => {
             const haystack = (record.dataset.search || '').toLocaleLowerCase();
+            const recordedDate = record.dataset.recordedDate || '';
             return terms.every(term => haystack.includes(term))
-                && (!selectedStatus || record.dataset.status === selectedStatus);
+                && (!selectedStatus || record.dataset.status === selectedStatus)
+                && !invalidRange
+                && ((!startDate && !endDate) || (recordedDate
+                    && (!startDate || recordedDate >= startDate)
+                    && (!endDate || recordedDate <= endDate)));
         });
         pageCount = Math.max(1, Math.ceil(matches.length / pageSize));
         page = Math.min(page, pageCount);
@@ -124,10 +146,17 @@
     };
 
     const filter = () => { page = 1; render(); };
+    const filterDates = () => {
+        filter();
+        if (from?.value && to?.value && from.value > to.value) to.reportValidity();
+    };
     search.addEventListener('input', filter);
     status?.addEventListener('change', filter);
-    sort.addEventListener('change', filter);
-    pagination.addEventListener('click', event => {
+    sort?.addEventListener('change', filter);
+    from?.addEventListener('change', filterDates);
+    to?.addEventListener('change', filterDates);
+    size?.addEventListener('change', filter);
+    pagination?.addEventListener('click', event => {
         const target = event.target.closest('[data-gate-pass-page]');
         if (!target || target.disabled) return;
         const value = target.dataset.gatePassPage;
@@ -137,13 +166,18 @@
         render();
         numbers.querySelector('[aria-current="page"]')?.focus();
     });
-    root.querySelector('[data-gate-pass-reset]')?.addEventListener('click', () => {
+    const clearFilters = () => {
         search.value = '';
         if (status) status.value = '';
-        sort.value = 'newest';
+        if (from) from.value = '';
+        if (to) to.value = '';
+        if (size) size.value = String(defaultPageSize);
+        if (sort) sort.value = 'newest';
         filter();
         search.focus();
-    });
+    };
+    root.querySelector('[data-gate-pass-clear]')?.addEventListener('click', clearFilters);
+    root.querySelector('[data-gate-pass-reset]')?.addEventListener('click', clearFilters);
     render();
 })();
 </script>

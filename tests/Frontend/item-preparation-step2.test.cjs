@@ -54,7 +54,9 @@ test('reported discrepancy blocks preparation and preserves the AO recheck path'
     assert.match(preparation, /Inventory Review Required/);
     assert.match(preparation, /Inventory Reviewed — Recheck Item/);
     assert.match(preparation, /@disabled\(\$openPreparationIssues->isNotEmpty\(\)\)/);
-    assert.match(process, /Physical Release is unavailable while the reported inventory discrepancy is under review/);
+    assert.match(process, /\$canConfirmPreparation = \$hasPickupSchedule && ! \$hasOpenPreparationIssue;/);
+    assert.match(process, /@disabled\(!\s*\$canConfirmPreparation\)/);
+    assert.match(process, /Complete the item review before release\./);
 });
 
 

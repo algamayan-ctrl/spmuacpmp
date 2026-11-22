@@ -24,15 +24,24 @@
 .special-dates-config .special-date-submit { gap: 9px; margin-top: 12px; min-height: 44px; padding: 10px 16px; }
 .special-dates-config .special-date-submit .ui-icon { flex-shrink: 0; }
 
-.special-dates-config .special-dates-records { margin-top: 16px; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-elevated); }
-.special-dates-config .special-dates-records-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; }
+.special-dates-config .special-dates-records { margin-top: 16px; padding: 16px; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-elevated); }
+.special-dates-config .special-dates-records-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 0; }
 .special-dates-config .special-dates-records-header h3 { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 14.5px; font-weight: 750; }
 .special-dates-config .special-dates-count { display: inline-flex; min-width: 26px; height: 22px; align-items: center; justify-content: center; padding: 0 8px; border-radius: 999px; background: var(--blue-50); color: var(--interactive); font-size: 11px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .special-dates-config .special-dates-search { display: block; width: min(100%, 330px); margin: 0; }
 .special-dates-config .special-dates-search-shell > input[type="search"] { min-height: 40px; padding: 9px 40px 9px 13px; border-color: var(--border); border-radius: 8px; font-size: 12px; }
 .special-dates-config .special-dates-search-shell .search-input-icon { right: 12px; left: auto; }
 
-.special-dates-config .special-dates-table-wrap { border: 0; border-top: 1px solid var(--border); border-radius: 0; box-shadow: none; }
+/* This is the aligned filter row and pagination for Scheduled Exceptions. */
+.special-dates-config .special-dates-records > .record-table-toolbar { display: grid; grid-template-columns: minmax(180px, 2fr) minmax(100px, 1fr) repeat(2, minmax(140px, 1.2fr)) minmax(104px, .85fr) max-content; align-items: end; gap: 10px; margin: 14px 0; }
+.special-dates-config .special-dates-records > .record-table-toolbar label { min-width: 0; margin: 0; }
+.special-dates-config .special-dates-records > .record-table-toolbar input,
+.special-dates-config .special-dates-records > .record-table-toolbar select { min-width: 0; min-height: 40px; height: 40px; }
+.special-dates-config .special-dates-records .record-table-actions { flex-wrap: nowrap; min-height: 40px; }
+.special-dates-config .special-dates-records .record-table-actions .button { min-height: 40px; height: 40px; }
+.special-dates-config .special-dates-records > .record-table-footer { margin-top: 12px; padding: 0; border-top: 0; }
+
+.special-dates-config .special-dates-table-wrap { border: 1px solid var(--border); border-radius: var(--radius); box-shadow: none; }
 .special-dates-config .special-dates-table-wrap table { min-width: 900px; }
 .special-dates-config .special-dates-table-wrap tr[hidden] { display: none; }
 .special-dates-config .special-dates-sort { display: inline-flex; min-height: 0; align-items: center; gap: 6px; padding: 0; border: 0; border-radius: 4px; background: none; color: inherit; cursor: pointer; font: inherit; letter-spacing: inherit; text-transform: inherit; }
@@ -55,6 +64,10 @@ html[data-theme="dark"] .special-dates-config .special-date-check:hover { backgr
 
 @media (max-width: 1180px) {
     .special-dates-config .special-date-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .special-dates-config .special-dates-records > .record-table-toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .special-dates-config .special-dates-records .record-table-search,
+    .special-dates-config .special-dates-records .record-table-actions { grid-column: 1 / -1; }
+    .special-dates-config .special-dates-records .record-table-actions { justify-content: flex-end; }
 }
 
 @media (max-width: 720px) {
@@ -63,6 +76,9 @@ html[data-theme="dark"] .special-dates-config .special-date-check:hover { backgr
     .special-dates-config .special-date-fields { grid-template-columns: minmax(0, 1fr); }
     .special-dates-config .special-dates-search { width: 100%; }
     .special-dates-config .special-date-submit { width: 100%; }
+    .special-dates-config .special-dates-records { padding: 12px; }
+    .special-dates-config .special-dates-records > .record-table-toolbar { grid-template-columns: minmax(0, 1fr); }
+    .special-dates-config .special-dates-records .record-table-actions .button { flex: 1; }
 }
 
 /* This is the single-row Special Dates form when the panel has enough space. */

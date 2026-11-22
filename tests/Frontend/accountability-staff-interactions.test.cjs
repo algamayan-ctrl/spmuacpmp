@@ -30,7 +30,10 @@ test('staff accountability KPI cards are whole-card links with universal navigat
   assert.match(index, /href="\{\{ \$card\['href'\] \}\}"/);
   assert.match(index, /accountability-overview-arrow/);
   assert.match(index, /\['queue' => 'work'\]/);
-  assert.match(index, /\['queue' => 'work', 'metric' => 'verification'\]/);
+  // Verification is a supported work-queue filter; it is no longer a separate summary tile.
+  assert.match(index, /'verification' => \$staffWorkQueue->where\('stage', 'Physical Compliance Verification'\)/);
+  assert.match(index, /'label' => 'Needs Your Action'/);
+  assert.match(index, /'label' => 'Open Cases'/);
   // Main consolidates receipt follow-up under Needs action; the receipt filter remains available.
   assert.match(index, /'receipts' => \$staffWorkQueue->filter/);
   assert.match(index, /\['queue' => 'all'\]/);
@@ -40,7 +43,7 @@ test('staff accountability KPI cards are whole-card links with universal navigat
 
 test('physical verification and open accountability cards use distinct urgency colors', () => {
   const pendingRule = index.match(/\[data-accountability-card-label="Pending Physical Verification"\]\s*\{([^}]*)\}/)?.[1] || '';
-  const openRule = index.match(/\[data-accountability-card-label="Open Accountability Cases"\]\s*\{([^}]*)\}/)?.[1] || '';
+  const openRule = index.match(/\[data-accountability-card-label="Open Accountability Cases"\](?:\s*,\s*\[[^\]]+\])*\s*\{([^}]*)\}/)?.[1] || '';
 
   assert.match(pendingRule, /#d97706/);
   assert.match(pendingRule, /#f59e0b/);

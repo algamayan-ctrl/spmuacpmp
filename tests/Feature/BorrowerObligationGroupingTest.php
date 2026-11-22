@@ -447,7 +447,7 @@ class BorrowerObligationGroupingTest extends TestCase
            not three separate rows for the incident, billing, and restriction,
            and not duplicated by a second banner. */
         $response->assertOk()
-            ->assertSee('Actions Requiring Your Attention')
+            ->assertSee('data-dashboard-section="primary-action"', false)
             ->assertSee($custody->request->request_no);
 
         $this->assertSame(
@@ -493,7 +493,7 @@ class BorrowerObligationGroupingTest extends TestCase
         $response->assertOk()->assertDontSee('id="borrower-obligation-title"', false);
     }
 
-    public function test_my_obligations_shows_the_four_grouped_summary_cards(): void
+    public function test_my_obligations_shows_the_two_compact_metrics_without_duplicating_the_grouped_case(): void
     {
         $borrower = $this->borrower();
         $custody = $this->custody($borrower, now()->addDays(3));
@@ -511,8 +511,8 @@ class BorrowerObligationGroupingTest extends TestCase
             ->get(route('accountability.index'));
 
         $response->assertOk()
-            ->assertSee('Active Obligations')
-            ->assertSee('Needs My Action')
+            ->assertSee('Current Accountability')
+            ->assertSee('Action Required')
             ->assertSee('My Unsettled Charges')
             ->assertSee('Borrowing Status')
             ->assertSee($billing->billing_no)
@@ -520,7 +520,8 @@ class BorrowerObligationGroupingTest extends TestCase
             ->assertDontSee('Overdue Returns')
             ->assertDontSee('Open Billings')
             ->assertDontSee('Active Restrictions');
-        $this->assertSame(4, substr_count($response->getContent(), 'class="ob-summary-card '));
+        $this->assertSame(2, substr_count($response->getContent(), 'class="ob-metric-card '));
+        $this->assertSame(0, substr_count($response->getContent(), 'class="ob-summary-card '));
         $this->assertSame(1, $this->obligations->overview($borrower->id)['needs_action']);
     }
 
@@ -531,11 +532,12 @@ class BorrowerObligationGroupingTest extends TestCase
             ->actingAs($borrower)
             ->get(route('accountability.index'))
             ->assertOk()
-            ->assertSee('No current obligations.')
-            ->assertSee('Active Obligations')
+            ->assertSee('No Active Accountability')
+            ->assertSee('No unsettled charges')
             ->assertSee('My Unsettled Charges')
             ->assertSee('Borrowing Status');
-        $this->assertSame(3, substr_count($response->getContent(), 'class="ob-summary-card '));
+        $this->assertSame(2, substr_count($response->getContent(), 'class="ob-metric-card '));
+        $this->assertSame(0, substr_count($response->getContent(), 'class="ob-summary-card '));
         $this->assertStringNotContainsString('<span class="ob-summary-label">Needs My Action</span>', $response->getContent());
         $this->assertSame(0, $this->obligations->overview($borrower->id)['count']);
     }
