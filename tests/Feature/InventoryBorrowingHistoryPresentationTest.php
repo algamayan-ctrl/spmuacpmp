@@ -86,25 +86,40 @@ class InventoryBorrowingHistoryPresentationTest extends TestCase
         $response = $this->actingAs($head)->get($this->url(['history_search' => 'History Borrower']))->assertOk();
         $page = $response->viewData('saoBorrowingHistory')['page'];
         $this->assertSame(12, $page->total());
-        $this->assertCount(10, $page->items());
+        $this->assertCount(7, $page->items());
         $this->assertSame(12, $response->viewData('historySummary')['records']);
         $this->assertSame(60.0, $response->viewData('historySummary')['issued']);
         $second = $this->get($page->nextPageUrl())->assertOk();
-        $this->assertCount(2, $second->viewData('saoBorrowingHistory')['page']->items());
+        $this->assertCount(5, $second->viewData('saoBorrowingHistory')['page']->items());
         $this->assertSame(12, $second->viewData('historySummary')['records']);
         $second->assertSee('aria-label="Borrowing history pages"', false);
     }
 
-    public function test_sao_history_keeps_essential_records_and_removes_duplicate_explanations_and_controls(): void
+    public function test_both_staff_history_selects_show_the_supported_page_sizes_and_selected_default(): void
+    {
+        $head = User::factory()->create(['access_classification' => AccessClassification::SpmuHead]);
+        foreach ([$head, $this->officer] as $actor) {
+            $response = $this->actingAs($actor)->get($this->url())->assertOk();
+            $document = new \DOMDocument();
+            @$document->loadHTML($response->getContent());
+            $xpath = new \DOMXPath($document);
+            $options = $xpath->query('//select[@name="history_per_page"]/option');
+            $this->assertSame(['7', '15', '30', '50'], array_map(fn ($option) => $option->getAttribute('value'), iterator_to_array($options)));
+            $this->assertSame(['7 entries', '15 entries', '30 entries', '50 entries'], array_map(fn ($option) => trim($option->textContent), iterator_to_array($options)));
+            $this->assertSame('7', $xpath->query('//select[@name="history_per_page"]/option[@selected]')->item(0)?->getAttribute('value'));
+        }
+    }
+
+    public function test_officer_history_uses_the_shared_records_filters_and_summary(): void
     {
         $custody = $this->loan(1);
         $this->loan(2, released: null, returned: null);
         $response = $this->actingAs($this->officer)->get($this->url())->assertOk()
-            ->assertSeeText('History Borrower')->assertSeeText('History Test Office')->assertSeeText('To Return')
-            ->assertSeeText('View Details')->assertSeeText('Returned On Time')
-            ->assertDontSeeText('Apply Filter')->assertDontSeeText('Reset')
-            ->assertDontSeeText('Includes records whose actual custody overlaps')
-            ->assertDontSee('class="inventory-history-summary"', false);
+            ->assertSeeText('History Borrower')->assertSeeText('History Test Office')->assertSeeText('Outstanding')
+            ->assertSeeText('View Custody')->assertSeeText('Returned On Time')
+            ->assertSeeText('Apply Filter')->assertSeeText('Reset')
+            ->assertSeeText('Includes records whose actual custody overlaps')
+            ->assertSee('class="inventory-history-summary"', false);
         $history = $response->viewData('saoBorrowingHistory')['page'];
         $this->assertSame(1, $history->total());
         $this->assertSame($custody->id, $history->first()['custody']->id);
@@ -125,10 +140,10 @@ class InventoryBorrowingHistoryPresentationTest extends TestCase
             'history_from' => '2026-10-01', 'history_to' => '2026-10-31'];
         $first = $this->get($this->url($filters))->assertOk()->viewData('saoBorrowingHistory')['page'];
         $this->assertSame(12, $first->total());
-        $this->assertCount(10, $first->items());
+        $this->assertCount(7, $first->items());
         $second = $this->get($first->nextPageUrl())->assertOk()->viewData('saoBorrowingHistory')['page'];
         $this->assertSame(12, $second->total());
-        $this->assertCount(2, $second->items());
+        $this->assertCount(5, $second->items());
         $this->assertStringContainsString('history_status=RETURNED_ON_TIME', $first->nextPageUrl());
         $this->assertStringContainsString('tab=borrowing-history', $first->nextPageUrl());
         $this->assertSame([], array_intersect($first->pluck('custody.id')->all(), $second->pluck('custody.id')->all()));
@@ -153,7 +168,7 @@ class InventoryBorrowingHistoryPresentationTest extends TestCase
             ->assertOk()->viewData('saoBorrowingHistory')['page'];
         $this->assertSame(2, $stillOut->total());
         $this->get($this->url(['history_from' => '2026-10-01', 'history_to' => '2026-10-10']))
-            ->assertOk()->assertSeeText('No borrowing records match these filters.');
+            ->assertOk()->assertSeeText('No actual borrowing record found for this period.');
     }
 
     public function test_head_layout_is_retained_and_invalid_page_sizes_are_rejected_for_sao(): void

@@ -67,7 +67,7 @@
     $currentSourceGroups = $currentSources->groupBy('group');
     $currentSourceOrder = [
         'DISCREPANCY' => 'Preparation discrepancies',
-        'RESERVED' => $isActionOfficer ? 'Allocated' : 'Reserved',
+        'RESERVED' => 'Reserved',
         'CUSTODY' => 'On custody',
         'LAUNDRY' => 'Laundry',
         'ISSUE' => 'Inventory exceptions',
@@ -99,7 +99,7 @@
     </a>
 </section>
 
-<section class="content-area inventory-detail-page{{ $isActionOfficer ? ' is-action-officer' : '' }}">
+<section class="content-area inventory-detail-page">
     @if($isBorrower)
         <article class="card borrower-inventory-detail-card borrower-inventory-polished">
             <div class="card-header borrower-inventory-card-header">
@@ -182,7 +182,7 @@
                     <strong>{{ $total + 0 }}</strong>
                 </div>
             </div>
-            <div class="inventory-admin-summary-item is-available" role="button" tabindex="0" aria-haspopup="dialog" data-inventory-summary="available" title="{{ $isActionOfficer ? 'Usable items not already allocated to approved requests.' : 'Serviceable units currently free for a new allocation; approved reservations are already excluded.' }}">
+            <div class="inventory-admin-summary-item is-available" role="button" tabindex="0" aria-haspopup="dialog" data-inventory-summary="available" title="Serviceable units currently free for a new allocation; approved reservations are already excluded.">
                 <span class="inventory-summary-icon" aria-hidden="true"><x-icon name="success" size="18" /></span>
                 <div class="inventory-summary-copy">
                     <span>Available</span>
@@ -192,7 +192,7 @@
             <div class="inventory-admin-summary-item is-reserved" role="button" tabindex="0" aria-haspopup="dialog" data-inventory-summary="reserved" title="Units allocated to approved requests and awaiting physical release.">
                 <span class="inventory-summary-icon" aria-hidden="true"><x-icon name="bookmark" size="18" /></span>
                 <div class="inventory-summary-copy">
-                    <span>{{ $isActionOfficer ? 'Allocated' : 'Reserved' }}</span>
+                    <span>Reserved</span>
                     <strong>{{ $reserved + 0 }}</strong>
                 </div>
             </div>
@@ -212,7 +212,6 @@
             </div>
         </section>
 
-        @unless($isActionOfficer)
         <div class="inventory-last-movement" role="note" aria-label="Last stock movement">
             <span class="inventory-last-movement-icon" aria-hidden="true"><x-icon name="box" size="17" /></span>
             <div class="inventory-last-movement-copy">
@@ -238,12 +237,11 @@
                 @endif
             </div>
         </div>
-        @endunless
 
         <nav class="inventory-detail-tabs" aria-label="Inventory detail sections" role="tablist">
-            <button type="button" class="{{ $isActionOfficer ? 'link-button ' : '' }}inventory-detail-tab {{ $activeInventoryTab === 'overview' ? 'is-active' : '' }}" data-inventory-tab="overview" role="tab" aria-selected="{{ $activeInventoryTab === 'overview' ? 'true' : 'false' }}">Overview</button>
-            <button type="button" class="{{ $isActionOfficer ? 'link-button ' : '' }}inventory-detail-tab {{ $activeInventoryTab === 'stock-card' ? 'is-active' : '' }}" data-inventory-tab="stock-card" role="tab" aria-selected="{{ $activeInventoryTab === 'stock-card' ? 'true' : 'false' }}">Stock Card</button>
-            <button type="button" class="{{ $isActionOfficer ? 'link-button ' : '' }}inventory-detail-tab {{ $activeInventoryTab === 'borrowing-history' ? 'is-active' : '' }}" data-inventory-tab="borrowing-history" role="tab" aria-selected="{{ $activeInventoryTab === 'borrowing-history' ? 'true' : 'false' }}">Borrowing History</button>
+            <button type="button" class="inventory-detail-tab {{ $activeInventoryTab === 'overview' ? 'is-active' : '' }}" data-inventory-tab="overview" role="tab" aria-selected="{{ $activeInventoryTab === 'overview' ? 'true' : 'false' }}">Overview</button>
+            <button type="button" class="inventory-detail-tab {{ $activeInventoryTab === 'stock-card' ? 'is-active' : '' }}" data-inventory-tab="stock-card" role="tab" aria-selected="{{ $activeInventoryTab === 'stock-card' ? 'true' : 'false' }}">Stock Card</button>
+            <button type="button" class="inventory-detail-tab {{ $activeInventoryTab === 'borrowing-history' ? 'is-active' : '' }}" data-inventory-tab="borrowing-history" role="tab" aria-selected="{{ $activeInventoryTab === 'borrowing-history' ? 'true' : 'false' }}">Borrowing History</button>
             <button type="button" class="inventory-detail-tab {{ $activeInventoryTab === 'item-information' ? 'is-active' : '' }}" data-inventory-tab="item-information" role="tab" aria-selected="{{ $activeInventoryTab === 'item-information' ? 'true' : 'false' }}">Item Description</button>
         </nav>
 
@@ -351,9 +349,6 @@
                 </article>
             @endif
 
-            @if($isActionOfficer)
-                @include('inventory.partials.sao-overview')
-            @else
             <div class="inventory-detail-grid inventory-overview-grid">
                 <article class="card inventory-overview-card">
                     <div class="card-header">
@@ -436,12 +431,14 @@
                     </div>
                     <div class="inventory-source-header-actions">
                         <span class="inventory-source-live">Current</span>
+                        @if($isInventoryAdmin)
                         <a
                             class="button secondary small ui-pressable"
                             href="{{ route('reports.index', ['report' => 'inventory', 'equipment' => $item->id, 'generated' => 1]) }}"
                         >
                             <span>View source report</span>
                         </a>
+                        @endif
                     </div>
                 </div>
 
@@ -497,12 +494,10 @@
                     </p>
                 @endif
             </article>
-            @endif
         </section>
 
         <section class="inventory-tab-panel" data-inventory-panel="stock-card" role="tabpanel" @if($activeInventoryTab !== 'stock-card') hidden @endif>
         @include('inventory.partials.sao-stock-card', ['card' => $saoStockCard])
-        @unless($isActionOfficer)
         <details class="inventory-movement-details" @if(request()->hasAny(['movement_q', 'movement_type', 'movement_from', 'movement_to', 'movement_page', 'movement_per_page'])) open @endif><summary>Movement details</summary>
         <article class="card inventory-borrowing-history-card" id="inventory-movement-details">
             <div class="card-header inventory-history-header">
@@ -554,13 +549,9 @@
                     <x-record-table-footer :records="$movementPage" label="Inventory movement pages" />
         </article>
         </details>
-        @endunless
         </section>
 
         <section class="inventory-tab-panel" data-inventory-panel="borrowing-history" role="tabpanel" @if($activeInventoryTab !== 'borrowing-history') hidden @endif>
-        @if($isActionOfficer)
-            @include('inventory.partials.sao-borrowing-history', ['history' => $saoBorrowingHistory])
-        @else
         <article class="card inventory-borrowing-history-card" id="borrowing-history">
             <div class="card-header inventory-history-header">
                 <div>
@@ -625,7 +616,7 @@
                     </span>
                 </label>
 
-                <x-record-page-size name="history_per_page" :value="$saoBorrowingHistory['per_page']" :sizes="[10, 30, 50, 100]" />
+                <x-record-page-size name="history_per_page" :value="$saoBorrowingHistory['per_page']" :sizes="[7, 15, 30, 50]" :entries-inside="true" />
                 <div class="inventory-history-filter-actions">
                     <button class="button primary ui-pressable" type="submit">
                         Apply Filter
@@ -795,7 +786,6 @@
             </div>
                     <x-record-table-footer :records="$saoBorrowingHistory['page']" label="Borrowing history pages" />
         </article>
-        @endif
         </section>
 
         <section class="inventory-tab-panel" data-inventory-panel="item-information" role="tabpanel" @if($activeInventoryTab !== 'item-information') hidden @endif>
@@ -1945,8 +1935,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 </style>
 
-@if($isActionOfficer)
-    @include('inventory.partials.sao-detail-styles')
+@if(! $isBorrower)
+    @include('inventory.partials.stock-card-styles')
 @endif
 
 @endsection

@@ -112,6 +112,7 @@ class InventoryStockCardService
         return match ($entry->transaction_type) {
             'INVENTORY_INITIAL_STOCK' => 'Opening stock',
             'INVENTORY_STOCK_ADDITION' => 'Additional stock received',
+            'INVENTORY_QUANTITY_CORRECTION' => 'Total quantity corrected',
             'PHYSICAL_RELEASE' => 'Released for borrowing',
             'PHYSICAL_RETURN' => match ($entry->to_state) {
                 'LAUNDRY' => 'Returned — for laundry',

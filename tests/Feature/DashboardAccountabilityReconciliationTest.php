@@ -667,6 +667,99 @@ class DashboardAccountabilityReconciliationTest extends TestCase
             );
     }
 
+    public function test_staff_dashboard_case_cards_open_all_cases_including_waiting_borrowers(): void
+    {
+        $decisionBorrower = $this->borrower();
+        $waitingBorrower = $this->borrower();
+        $decisionCustody = $this->custody($decisionBorrower, ['status' => 'OBLIGATION_OPEN'], ['returned_quantity' => 5]);
+        $waitingCustody = $this->custody($waitingBorrower, ['status' => 'OBLIGATION_OPEN'], ['returned_quantity' => 5]);
+        $this->incident($decisionCustody, 'OPEN');
+        $this->incident($waitingCustody, 'COMPLIANCE_REQUIRED');
+
+        foreach ([[$this->spmuHead(), 'Open Accountability Cases'], [$this->officer(), 'Accountability Cases']] as [$actor, $label]) {
+            $this->app['auth']->forgetGuards();
+            $this->flushSession();
+            $dashboard = $this->actingAs($actor)->withSession(['active_workspace' => 'SPMU'])->get(route('dashboard'))->assertOk();
+            $this->assertSame(2, $dashboard->viewData('statistics')[$label]);
+            $href = $this->dashboardCardHref($dashboard->getContent(), $label);
+            $page = $this->get(explode('#', $href, 2)[0])->assertOk();
+            $page->assertSee('Borrowers with Active Accountability')
+                ->assertSee('id="accountability-borrower-count" data-total="2">2</span>', false);
+            $rows = $this->borrowerRows($page->getContent());
+            $this->assertCount(2, $rows);
+            $names = implode(' ', array_map(fn ($row) => $row->textContent, iterator_to_array($rows)));
+            $this->assertStringContainsString($decisionBorrower->full_name, $names);
+            $this->assertStringContainsString($waitingBorrower->full_name, $names);
+            $this->assertWorkspaceAnchorExists($page->getContent(), $href);
+        }
+    }
+
+    public function test_head_restrictions_card_follows_its_actual_link_and_excludes_unrestricted_borrowers(): void
+    {
+        $restricted = $this->borrower();
+        $clear = $this->borrower();
+        $restrictedCustody = $this->custody($restricted, ['status' => 'OBLIGATION_OPEN'], ['returned_quantity' => 5]);
+        $clearCustody = $this->custody($clear, ['status' => 'OBLIGATION_OPEN'], ['returned_quantity' => 5]);
+        $incident = $this->incident($restrictedCustody, 'COMPLIANCE_REQUIRED');
+        $this->incident($clearCustody, 'COMPLIANCE_REQUIRED');
+        $this->restriction($restricted, ['incident_id' => $incident->id]);
+
+        $dashboard = $this->actingAs($this->spmuHead())->withSession(['active_workspace' => 'SPMU'])->get(route('dashboard'))->assertOk();
+        $this->assertSame(1, $dashboard->viewData('statistics')['Active Restrictions']);
+        $href = $this->dashboardCardHref($dashboard->getContent(), 'Active Restrictions');
+        $page = $this->get(explode('#', $href, 2)[0])->assertOk();
+        $this->assertTrue($page->viewData('restrictionsFocusRequested'));
+        $rows = $this->borrowerRows($page->getContent());
+        $this->assertCount(1, $rows);
+        $this->assertStringContainsString($restricted->full_name, $rows->item(0)->textContent);
+        $this->assertStringNotContainsString($clear->full_name, $rows->item(0)->textContent);
+        $this->assertSame('restricted', $rows->item(0)->getAttribute('data-borrowing-status'));
+        $this->assertWorkspaceAnchorExists($page->getContent(), $href);
+    }
+
+    public function test_corrected_staff_dashboard_cards_open_matching_empty_lists(): void
+    {
+        foreach ([[$this->spmuHead(), ['Open Accountability Cases', 'Active Restrictions']], [$this->officer(), ['Accountability Cases']]] as [$actor, $labels]) {
+            $this->app['auth']->forgetGuards();
+            $this->flushSession();
+            $dashboard = $this->actingAs($actor)->withSession(['active_workspace' => 'SPMU'])->get(route('dashboard'))->assertOk();
+            foreach ($labels as $label) {
+                $this->assertSame(0, $dashboard->viewData('statistics')[$label]);
+                $href = $this->dashboardCardHref($dashboard->getContent(), $label);
+                $page = $this->get(explode('#', $href, 2)[0])->assertOk()->assertSee('No active accountability cases.');
+                $this->assertWorkspaceAnchorExists($page->getContent(), $href);
+            }
+        }
+    }
+
+    private function dashboardCardHref(string $html, string $label): string
+    {
+        $document = new \DOMDocument();
+        @$document->loadHTML('<?xml encoding="utf-8" ?>'.$html);
+        $xpath = new \DOMXPath($document);
+        $cards = $xpath->query('//a[contains(concat(" ", normalize-space(@class), " "), " dashboard-kpi-card ")][.//span[@class="kpi-label" and normalize-space(.)="'.$label.'"]]');
+        $this->assertCount(1, $cards);
+        $href = $cards->item(0)->getAttribute('href');
+        $this->assertNotSame('', $href);
+
+        return $href;
+    }
+
+    private function borrowerRows(string $html): \DOMNodeList
+    {
+        $document = new \DOMDocument();
+        @$document->loadHTML('<?xml encoding="utf-8" ?>'.$html);
+
+        return (new \DOMXPath($document))->query('//*[@id="accountability-borrower-body"]/tr[@data-borrower-row]');
+    }
+
+    private function assertWorkspaceAnchorExists(string $html, string $href): void
+    {
+        $anchor = parse_url($href, PHP_URL_FRAGMENT);
+        $this->assertNotEmpty($anchor);
+        $this->assertStringContainsString('id="'.$anchor.'"', $html);
+    }
+
     /* ================================================================== */
     /* 4. Head/Admin Active Restrictions destination                       */
     /* ================================================================== */

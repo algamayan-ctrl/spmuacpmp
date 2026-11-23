@@ -188,7 +188,7 @@ class InventoryStockCardTest extends TestCase
         }
         $this->actingAs($this->officer());
         $screen = $this->get(route('inventory.show', ['inventory' => $item->id, 'tab' => 'stock-card']))
-            ->assertOk()->assertSeeText('Print Stock Card')->assertDontSeeText('Read-only inventory ledger')
+            ->assertOk()->assertSeeText('Print Stock Card')->assertSeeText('Read-only inventory ledger')
             ->assertDontSeeText('@else')->assertDontSeeText('No matching entries');
         $this->assertSame(7, substr_count($screen->getContent(), 'data-stock-card-row'));
         $copy = $this->get(route('inventory.stock-card.print', ['inventory' => $item->id, 'stock_page' => 2]))

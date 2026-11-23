@@ -414,31 +414,33 @@ class InventoryAdjustmentWorkflowTest extends TestCase
         $this->assertSame(5.0, (float) $item->fresh()->total_quantity);
     }
 
-    public function test_action_officer_overview_combines_item_details_and_preserves_history_navigation(): void
+    public function test_action_officer_uses_shared_inventory_sections_and_preserves_tab_navigation(): void
     {
         $item = $this->item('SAO Overview Item', 5);
         $officer = $this->officer();
 
-        foreach (['', '?tab=item-information'] as $query) {
+        foreach (['overview', 'stock-card', 'borrowing-history', 'item-information'] as $tab) {
             $this->withSession(['active_workspace' => 'SPMU'])
                 ->actingAs($officer)
-                ->get(route('inventory.show', $item).$query)
+                ->get(route('inventory.show', ['inventory' => $item, 'tab' => $tab]))
                 ->assertOk()
-                ->assertSeeText('Item Details')
-                ->assertSeeText('Stock Details')
-                ->assertSee('data-inventory-tab="overview" role="tab" aria-selected="true"', false)
+                ->assertSeeText('Unavailable breakdown')
+                ->assertSeeText('Physical condition')
+                ->assertSee('data-inventory-tab="'.$tab.'" role="tab" aria-selected="true"', false)
                 ->assertSee('data-inventory-tab="stock-card"', false)
                 ->assertSee('data-inventory-tab="borrowing-history"', false)
-                ->assertDontSee('data-inventory-tab="item-information"', false)
-                ->assertDontSeeText('Last stock movement')
-                ->assertDontSeeText('Records behind the current counts')
+                ->assertSee('data-inventory-tab="item-information"', false)
+                ->assertSeeText('Last stock movement')
+                ->assertSeeText('Records behind the current counts')
+                ->assertDontSee('href="'.route('inventory.edit', $item).'"', false)
+                ->assertDontSeeText('View source report')
                 ->assertDontSee('class="inventory-adjustment-form" data-inventory-adjustment-form', false);
         }
 
         $this->assertSame(5.0, (float) $item->fresh()->total_quantity);
     }
 
-    public function test_action_officer_overview_keeps_stock_findings_open_without_changing_balances(): void
+    public function test_action_officer_overview_shows_shared_stock_findings_without_changing_balances(): void
     {
         $item = $this->item('SAO Maintenance Item', 10);
         $this->inventory->recordAdjustment($item, $this->spmuHead(), [
@@ -452,11 +454,11 @@ class InventoryAdjustmentWorkflowTest extends TestCase
             ->actingAs($this->officer())
             ->get(route('inventory.show', $item))
             ->assertOk()
-            ->assertSeeText('Under Maintenance')
-            ->assertSeeText('Damaged / Under Repair')
-            ->assertSeeText('Current Records');
-        $this->assertMatchesRegularExpression('/<details[^>]*class="card sao-stock-details"[^>]*\bopen/', $response->getContent());
-        $this->assertMatchesRegularExpression('/<details[^>]*class="card sao-current-records"[^>]*\bopen/', $response->getContent());
+            ->assertSeeText('Maintenance / physical condition hold')
+            ->assertSeeText('Damaged / under repair')
+            ->assertSeeText('Records behind the current counts');
+        $response->assertSee('class="inventory-detail-grid inventory-overview-grid"', false)
+            ->assertSee('class="card inventory-source-records-card"', false);
         $balance = $this->inventory->availability($item->fresh(), now(), now()->addMinute());
         $this->assertSame(10.0, (float) $item->fresh()->total_quantity);
         $this->assertSame(8.0, $balance['borrower_available']);
@@ -476,6 +478,54 @@ class InventoryAdjustmentWorkflowTest extends TestCase
             ->assertSeeText('Unavailable breakdown')
             ->assertSee('class="inventory-adjustment-form" data-inventory-adjustment-form', false)
             ->assertDontSeeText('Item Details');
+    }
+
+    public function test_staff_inventory_read_only_regions_share_the_same_markup(): void
+    {
+        $item = $this->item('Shared Staff Inventory Item', 8);
+        $this->inventory->recordInitialStock($item, $this->spmuHead());
+        $this->withSession(['active_workspace' => 'SPMU']);
+        $adminHtml = $this->actingAs($this->spmuHead())->get(route('inventory.show', $item))->assertOk()->getContent();
+        $officerHtml = $this->actingAs($this->officer())->get(route('inventory.show', $item))->assertOk()->getContent();
+        $regions = [
+            '//*[contains(concat(" ", normalize-space(@class), " "), " inventory-admin-summary ")]',
+            '//*[contains(concat(" ", normalize-space(@class), " "), " inventory-last-movement ")]',
+            '//nav[@aria-label="Inventory detail sections"]',
+            '//*[contains(concat(" ", normalize-space(@class), " "), " inventory-overview-grid ")]',
+            '//*[@id="stock-card"]',
+            '//*[@id="inventory-movement-details"]',
+            '//*[@id="borrowing-history"]',
+            '//*[@data-inventory-panel="item-information"]//dl',
+        ];
+        $normalized = function (string $html, string $selector): string {
+            $document = new \DOMDocument();
+            @$document->loadHTML('<?xml encoding="utf-8" ?>'.$html);
+            $xpath = new \DOMXPath($document);
+            // Stock-card printing retains its existing Officer-only permission.
+            foreach ($xpath->query('//a[contains(@href,"/stock-card/print")]') as $printLink) {
+                $printLink->parentNode->removeChild($printLink);
+            }
+            $nodes = $xpath->query($selector);
+            $this->assertCount(1, $nodes, $selector);
+
+            return preg_replace('/\s+/', ' ', preg_replace('/>\s+</', '><', $nodes->item(0)->C14N()));
+        };
+        foreach ($regions as $selector) {
+            $this->assertSame($normalized($adminHtml, $selector), $normalized($officerHtml, $selector), $selector);
+        }
+    }
+
+    public function test_officer_shared_layout_does_not_grant_inventory_mutations(): void
+    {
+        $item = $this->item('Officer Read Only Item', 8);
+        $transactionsBefore = DB::table('inventory_transactions')->count();
+        $this->withSession(['active_workspace' => 'SPMU'])->actingAs($this->officer());
+        $this->get(route('inventory.edit', $item))->assertForbidden();
+        $this->put(route('inventory.update', $item), ['new_total_quantity' => 999])->assertForbidden();
+        $this->delete(route('inventory.destroy', $item))->assertForbidden();
+        $this->post(route('inventory.adjust', $item), ['action' => 'STOCK_ADDITION', 'quantity' => 1])->assertForbidden();
+        $this->assertSame(8, $item->fresh()->total_quantity);
+        $this->assertSame($transactionsBefore, DB::table('inventory_transactions')->count());
     }
 
     public function test_manual_inventory_adjustment_cannot_duplicate_ao_compliance_restoration(): void
@@ -515,7 +565,7 @@ class InventoryAdjustmentWorkflowTest extends TestCase
             ->assertSee('Inactive / archived record');
     }
 
-    public function test_edit_screen_does_not_allow_direct_total_stock_or_condition_changes(): void
+    public function test_edit_screen_uses_the_documented_quantity_correction_and_keeps_condition_read_only(): void
     {
         $item = $this->item('Controlled Stock Item', 8);
         $head = $this->spmuHead();
@@ -525,7 +575,8 @@ class InventoryAdjustmentWorkflowTest extends TestCase
             ->assertOk()
             ->assertDontSee('name="total_quantity"', false)
             ->assertDontSee('name="condition_code"', false)
-            ->assertSee('Managed from Inventory Overview')
+            ->assertSee('name="new_total_quantity"', false)
+            ->assertSee('name="original_total_quantity"', false)
             ->assertSee('View Inventory Overview');
     }
 

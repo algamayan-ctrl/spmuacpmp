@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\AccessClassification;
 use App\Models\Allocation;
 use App\Models\BorrowingRequest;
 use App\Models\Incident;
@@ -1291,9 +1292,109 @@ class InventoryService
     }
 
     /**
-     * Formal SPMU Head stock and condition adjustment. This is intentionally
-     * separate from the metadata Edit screen so physical stock movements always
-     * leave a Stock Card record and cannot silently change an approved commitment.
+     * Update item details and document any total-stock correction. The caller
+     * includes the audit write in the same transaction as this operation.
+     *
+     * @return array{changed: bool, before: array, after: array, correlation_id: string}
+     */
+    public function updateItemDetails(
+        InventoryItem $item,
+        User $actor,
+        array $data,
+        string $reason,
+        ?int $newTotal = null,
+        ?int $expectedTotal = null
+    ): array {
+        abort_unless($actor->access_classification === AccessClassification::SpmuHead, 403);
+
+        if (trim($reason) === '') {
+            throw ValidationException::withMessages(['change_reason' => 'Enter the reason for this inventory change.']);
+        }
+
+        return DB::transaction(function () use ($item, $actor, $data, $reason, $newTotal, $expectedTotal): array {
+            $locked = InventoryItem::query()->lockForUpdate()->findOrFail($item->id);
+            $before = $locked->toArray();
+            $beforeTotal = $locked->total_quantity;
+            $correlationId = (string) Str::uuid();
+
+            if ($newTotal !== null && ($expectedTotal === null || $expectedTotal !== $beforeTotal)) {
+                throw ValidationException::withMessages([
+                    'new_total_quantity' => 'The stock quantity changed while this form was open. Refresh the page, review the current quantity, and try again.',
+                ]);
+            }
+
+            if ($newTotal !== null && ($newTotal < 0 || $newTotal > 999999999)) {
+                throw ValidationException::withMessages(['new_total_quantity' => 'Enter a whole quantity between 0 and 999999999.']);
+            }
+
+            $balance = $this->availability($locked, now(), now()->addSecond(), lockCurrentBalances: true);
+            $committed = (float) $balance['reserved'] + (float) $balance['borrowed']
+                + (float) $balance['laundry'] + (float) $balance['incident']
+                + (float) ($balance['condition_hold'] ?? 0);
+
+            if ($newTotal !== null && $newTotal !== $beforeTotal && $newTotal < $committed) {
+                $minimum = (int) ceil($committed);
+                throw ValidationException::withMessages([
+                    'new_total_quantity' => "Total quantity must be at least {$minimum}. Reserved, borrowed, laundry and exception stock cannot be removed by a quantity correction.",
+                ]);
+            }
+
+            // Use the locked record for physical fields; never accept direct
+            // condition changes or stale totals from a metadata-only request.
+            unset($data['total_quantity'], $data['condition_code']);
+            $locked->fill($data);
+            if ($newTotal !== null) {
+                $locked->total_quantity = $newTotal;
+            }
+
+            if (! $locked->active && $before['active'] && $committed > 0) {
+                throw ValidationException::withMessages([
+                    'active' => "This item cannot be archived while {$committed} unit(s) are reserved, on custody, in laundry, or under an inventory exception.",
+                ]);
+            }
+
+            if (! $locked->isDirty()) {
+                return ['changed' => false, 'before' => $before, 'after' => $before, 'correlation_id' => $correlationId];
+            }
+
+            $locked->save();
+            $delta = $locked->total_quantity - $beforeTotal;
+
+            if ($delta !== 0) {
+                $afterBalance = $this->availability($locked, now(), now()->addSecond(), lockCurrentBalances: true);
+                $state = $locked->condition_code === 'SERVICEABLE' ? 'AVAILABLE' : $locked->condition_code;
+                $transactionId = DB::table('inventory_transactions')->insertGetId([
+                    'actor_user_id' => $actor->id,
+                    'transaction_type' => 'INVENTORY_QUANTITY_CORRECTION',
+                    'source_type' => InventoryItem::class,
+                    'source_id' => $locked->id,
+                    'reason' => trim($reason),
+                    'correlation_id' => $correlationId,
+                    'occurred_at' => now(),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+                DB::table('inventory_transaction_lines')->insert([
+                    'inventory_transaction_id' => $transactionId,
+                    'inventory_item_id' => $locked->id,
+                    'from_state' => $delta > 0 ? 'OUTSIDE_STOCK' : $state,
+                    'to_state' => $delta > 0 ? $state : 'OUTSIDE_STOCK',
+                    'quantity' => abs($delta),
+                    'before_quantity' => $balance['borrower_available'],
+                    'after_quantity' => $afterBalance['borrower_available'],
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+
+            return ['changed' => true, 'before' => $before, 'after' => $locked->fresh()->toArray(), 'correlation_id' => $correlationId];
+        });
+    }
+
+    /**
+     * Formal SPMU Head stock and condition adjustment from Inventory Overview.
+     * Physical movements always leave a Stock Card record and cannot silently
+     * change an approved commitment.
      *
      * @param array<string, mixed> $data
      * @return array<string, mixed>

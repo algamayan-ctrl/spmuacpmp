@@ -3,7 +3,7 @@
     $summaryDefinitions = [
         'total' => ['Total Stock', $total, null],
         'available' => ['Available', $available, []],
-        'reserved' => [$isActionOfficer ? 'Allocated' : 'Reserved', $reserved, ['RESERVED']],
+        'reserved' => ['Reserved', $reserved, ['RESERVED']],
         'custody' => ['On Custody', $issued, ['CUSTODY']],
         'unavailable' => ['Unavailable', $unavailable, ['DISCREPANCY', 'LAUNDRY', 'ISSUE', 'CONDITION_HOLD', 'CONDITION']],
     ];

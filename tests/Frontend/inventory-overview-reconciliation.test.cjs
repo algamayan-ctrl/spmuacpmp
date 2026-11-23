@@ -74,8 +74,8 @@ test('Borrower Available Items can filter the catalogue by premises', () => {
   assert.match(borrowerInteractions, /matchesPremises/);
 });
 
-test('existing item edit delegates physical stock changes to Inventory Overview without duplicate instructions', () => {
-  assert.match(form, /Managed from Inventory Overview/);
+test('existing item edit supports approved total corrections and retains the Inventory Overview link', () => {
+  assert.match(form, /New Total Quantity/);
   assert.match(form, /View Inventory Overview/);
   assert.doesNotMatch(form, /Use <strong>Record Inventory Adjustment<\/strong>/);
   assert.doesNotMatch(form, /Accountability repair, replacement, and recovery are posted automatically/);

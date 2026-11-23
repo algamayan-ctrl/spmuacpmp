@@ -1392,46 +1392,38 @@ class InventoryController extends Controller
             $inventory
         );
 
-        $balance = $service->availability(
-            $inventory,
-            now()->subYears(10),
-            now()->addYears(10)
-        );
-
-        $committed =
-            $balance['reserved']
-            + $balance['borrowed']
-            + $balance['laundry']
-            + $balance['incident']
-            + ($balance['condition_hold'] ?? 0);
-
-        if (! $data['active'] && $inventory->active && $committed > 0) {
-            throw ValidationException::withMessages([
-                'active' =>
-                    "This item cannot be archived while {$committed} unit(s) are reserved, on custody, in laundry, or under an inventory exception.",
-            ]);
-        }
-
         // The change and its audit event commit together, or not at all.
-        DB::transaction(function () use ($inventory, $data, $request, $audit): void {
-            $before = $inventory->toArray();
+        $changed = DB::transaction(function () use ($inventory, $data, $request, $service, $audit): bool {
+            $result = $service->updateItemDetails(
+                $inventory,
+                $request->user(),
+                $data,
+                $request->string('change_reason')->toString(),
+                $request->has('new_total_quantity') ? $request->integer('new_total_quantity') : null,
+                $request->has('original_total_quantity') ? $request->integer('original_total_quantity') : null
+            );
 
-            $inventory->update($data);
+            if (! $result['changed']) {
+                return false;
+            }
 
             $audit->record(
                 'INVENTORY_ITEM_UPDATED',
                 $inventory,
                 reason: $request->input('change_reason'),
-                before: $before,
-                after: $inventory->fresh()->toArray()
+                before: $result['before'],
+                after: $result['after'],
+                correlationId: $result['correlation_id']
             );
+
+            return true;
         });
 
         return redirect()
             ->route('inventory.index')
             ->with(
                 'status',
-                'Inventory item updated with an audit record.'
+                $changed ? 'Inventory item updated with an audit record.' : 'Inventory item is already up to date.'
             );
     }
 
@@ -1687,10 +1679,12 @@ class InventoryController extends Controller
         ]);
 
         if ($item) {
-            // Physical stock and condition are reconciled from Inventory Overview
-            // so every change produces a formal Stock Card movement.
-            $data['total_quantity'] = $item->total_quantity;
-            $data['condition_code'] = $item->condition_code;
+            // Quantity changes use a separate, validated correction path.
+            // Master condition and a forged total_quantity remain read-only here.
+            $request->validate([
+                'new_total_quantity' => ['sometimes', 'required', 'integer', 'min:0', 'max:999999999'],
+                'original_total_quantity' => ['required_with:new_total_quantity', 'nullable', 'integer', 'min:0', 'max:999999999'],
+            ]);
         } else {
             $stockData = $request->validate([
                 'total_quantity' => ['required', 'integer', 'min:0'],

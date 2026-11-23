@@ -66,17 +66,40 @@
                     <div class="inventory-form-stock-control-head">
                         <div>
                             <span>Physical stock control</span>
-                            <strong>Managed from Inventory Overview</strong>
+                            <strong>Edit total quantity <small class="inventory-form-admin-badge">SPMU Admin only</small></strong>
                         </div>
                         <a class="button secondary small ui-pressable" href="{{ route('inventory.show', ['inventory' => $item->id, 'tab' => 'overview']) }}">
                             View Inventory Overview
                         </a>
                     </div>
 
-                    <div class="inventory-form-stock-values">
+                    <div class="inventory-form-stock-values is-editable">
                         <div>
-                            <span>Total Stock</span>
+                            <span>Current Total Quantity</span>
                             <strong>{{ (float) $item->total_quantity + 0 }}</strong>
+                        </div>
+                        <div>
+                            <label class="inventory-form-quantity-label" for="new-total-quantity">New Total Quantity</label>
+                            <input type="hidden" name="original_total_quantity" value="{{ $item->total_quantity }}">
+                            <input
+                                id="new-total-quantity"
+                                type="number"
+                                name="new_total_quantity"
+                                value="{{ old('new_total_quantity', $item->total_quantity) }}"
+                                min="0"
+                                max="999999999"
+                                step="1"
+                                inputmode="numeric"
+                                required
+                                aria-describedby="inventory-quantity-change"
+                                data-inventory-total-quantity
+                                data-current-quantity="{{ $item->total_quantity }}"
+                                data-unit="{{ $item->unit?->unit_name ?: 'Unit' }}"
+                                data-unit-plural="{{ \Illuminate\Support\Str::plural($item->unit?->unit_name ?: 'Unit') }}"
+                            >
+                            <small id="inventory-quantity-change" data-inventory-quantity-change aria-live="polite">No quantity change.</small>
+                            @error('new_total_quantity')<small class="field-error">{{ $message }}</small>@enderror
+                            @error('original_total_quantity')<small class="field-error">{{ $message }}</small>@enderror
                         </div>
                         <div>
                             <span>Master Condition</span>
@@ -150,7 +173,7 @@
 
             @if($item->exists)
                 <label>
-                    Reason for Change
+                    Reason for Change *
 <textarea
                         name="change_reason"
                         required
@@ -320,4 +343,7 @@
         @endif
     </section>
 </div>
+@if($item->exists)
+    @include('inventory.partials.quantity-interactions')
+@endif
 @endsection

@@ -1151,13 +1151,13 @@ a.dashboard-kpi-card:focus-visible {
             'For Verification' => ['clipboard-check', 'info', route('verifications.index'), 'Awaiting verification'],
             'For Release' => ['custody', 'info', route('custody.release.index'), 'Awaiting release processing'],
             'For Return' => ['calendar-clock', 'warning', route('custody.return.index'), 'Outstanding property to return'],
-            'Accountability Cases' => ['accountability', 'warning', route('accountability.index'), 'Open accountability matters'],
+            'Accountability Cases' => ['accountability', 'warning', route('accountability.index', ['queue' => 'all']).'#accountability-workspace', 'Open accountability matters'],
         ],
         'SPMU_HEAD' => [
             'For Approval' => ['approval', 'info', route('approvals.index'), 'Awaiting final approval'],
             'Active Custodies' => ['custody', 'info', route('requests.index', ['kpi' => 'active_custodies']), 'Ongoing custody transactions'],
-            'Open Accountability Cases' => ['requests', 'warning', route('accountability.index'), 'Unresolved accountability matters'],
-            'Active Restrictions' => ['lock', 'warning', route('accountability.index', ['view' => 'restrictions']).'#accountability-cases-section', 'Restrictions currently in effect'],
+            'Open Accountability Cases' => ['requests', 'warning', route('accountability.index', ['queue' => 'all']).'#accountability-workspace', 'Unresolved accountability matters'],
+            'Active Restrictions' => ['lock', 'warning', route('accountability.index', ['queue' => 'all', 'view' => 'restrictions']).'#accountability-workspace', 'Restrictions currently in effect'],
         ],
         'ICTU' => [
             'Active Accounts' => ['users', 'success', route('administration.users.index', ['status' => 'active']), 'User accounts currently enabled'],
