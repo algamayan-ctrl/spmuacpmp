@@ -565,7 +565,7 @@ class InventoryAdjustmentWorkflowTest extends TestCase
             ->assertSee('Inactive / archived record');
     }
 
-    public function test_edit_screen_uses_the_documented_quantity_correction_and_keeps_condition_read_only(): void
+    public function test_edit_screen_keeps_quantity_and_condition_read_only(): void
     {
         $item = $this->item('Controlled Stock Item', 8);
         $head = $this->spmuHead();
@@ -575,8 +575,10 @@ class InventoryAdjustmentWorkflowTest extends TestCase
             ->assertOk()
             ->assertDontSee('name="total_quantity"', false)
             ->assertDontSee('name="condition_code"', false)
-            ->assertSee('name="new_total_quantity"', false)
-            ->assertSee('name="original_total_quantity"', false)
+            ->assertDontSee('name="new_total_quantity"', false)
+            ->assertDontSee('name="original_total_quantity"', false)
+            ->assertSee('Current Total Quantity')
+            ->assertSee('Master Condition')
             ->assertSee('View Inventory Overview');
     }
 

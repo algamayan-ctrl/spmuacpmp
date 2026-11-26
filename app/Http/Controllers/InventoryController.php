@@ -1432,9 +1432,7 @@ class InventoryController extends Controller
                 $inventory,
                 $request->user(),
                 $data,
-                $request->string('change_reason')->toString(),
-                $request->has('new_total_quantity') ? $request->integer('new_total_quantity') : null,
-                $request->has('original_total_quantity') ? $request->integer('original_total_quantity') : null
+                $request->string('change_reason')->toString()
             );
 
             if (! $result['changed']) {
@@ -1713,11 +1711,14 @@ class InventoryController extends Controller
         ]);
 
         if ($item) {
-            // Quantity changes use a separate, validated correction path.
-            // Master condition and a forged total_quantity remain read-only here.
+            // The edit screen is metadata-only. Reject retired quantity-edit payloads.
+            // Direct total_quantity and condition_code are never included in validated edit data.
             $request->validate([
-                'new_total_quantity' => ['sometimes', 'required', 'integer', 'min:0', 'max:999999999'],
-                'original_total_quantity' => ['required_with:new_total_quantity', 'nullable', 'integer', 'min:0', 'max:999999999'],
+                'new_total_quantity' => ['missing'],
+                'original_total_quantity' => ['missing'],
+            ], [
+                'new_total_quantity.missing' => 'Stock quantity changes must use Record Inventory Adjustment in Inventory Overview.',
+                'original_total_quantity.missing' => 'Refresh the edit form. Stock quantities are now read-only here.',
             ]);
         } else {
             $stockData = $request->validate([

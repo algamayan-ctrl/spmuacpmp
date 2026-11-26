@@ -61,7 +61,6 @@ class InventoryItemQuantityEditTest extends TestCase
             'unique_description' => $this->item->unique_description, 'specification' => $this->item->specification,
             'borrowable' => 1, 'laundry_required' => 0, 'off_campus_allowed' => 1, 'provisional' => 1, 'active' => 1,
             'change_reason' => 'Corrected after physical stock verification.',
-            'new_total_quantity' => 8, 'original_total_quantity' => 6,
         ];
     }
 
@@ -75,58 +74,41 @@ class InventoryItemQuantityEditTest extends TestCase
         return $this->inventory->availability($this->item->fresh(), now(), now()->addDay());
     }
 
-    private function correction(): object
-    {
-        return DB::table('inventory_transactions')->where('transaction_type', 'INVENTORY_QUANTITY_CORRECTION')->sole();
-    }
-
-    public function test_admin_form_shows_current_and_new_quantity_with_existing_controls(): void
+    public function test_admin_form_shows_read_only_quantity_and_condition_with_existing_controls(): void
     {
         $this->get(route('inventory.edit', $this->item))->assertOk()
-            ->assertSee('Current Total Quantity')->assertSee('New Total Quantity')->assertSee('SPMU Admin only')
-            ->assertSee('name="original_total_quantity" value="6"', false)
+            ->assertSee('Current Total Quantity')->assertDontSee('New Total Quantity')->assertSee('SPMU Admin only')
+            ->assertDontSee('name="new_total_quantity"', false)->assertDontSee('name="original_total_quantity"', false)
             ->assertSee('View Inventory Overview')->assertSee('Master Condition')->assertSee('Operational flags')
-            ->assertSee('data-inventory-quantity-change', false)->assertDontSee('name="condition_code"', false);
+            ->assertDontSee('data-inventory-quantity-change', false)->assertDontSee('name="condition_code"', false);
     }
 
-    public function test_increase_and_detail_changes_share_one_audit_and_stock_card_correction(): void
+    public function test_stock_addition_remains_available_and_metadata_does_not_create_a_movement(): void
     {
+        $this->inventory->recordAdjustment($this->item, $this->head, ['action' => 'STOCK_ADDITION', 'quantity' => 2, 'reason' => 'New delivery.']);
         $this->save(['specification' => 'Physically verified specification', 'provisional' => 0])->assertSessionHasNoErrors()->assertRedirect(route('inventory.index'));
         $this->assertSame(8, $this->item->fresh()->total_quantity);
         $this->assertEquals(8, $this->balance()['borrower_available']);
         $event = AuditEvent::where('action_code', 'INVENTORY_ITEM_UPDATED')->sole();
-        $this->assertSame(6, $event->before_json['total_quantity']);
+        $this->assertSame(8, $event->before_json['total_quantity']);
         $this->assertSame(8, $event->after_json['total_quantity']);
-        $this->assertSame('Original specification', $event->before_json['specification']);
         $this->assertSame('Physically verified specification', $event->after_json['specification']);
         $this->assertFalse($event->after_json['provisional']);
-        $this->assertSame($this->head->id, $event->actor_user_id);
-        $tx = $this->correction();
-        $this->assertSame($event->correlation_id, $tx->correlation_id);
-        $this->assertSame($event->reason, $tx->reason);
-        $line = DB::table('inventory_transaction_lines')->where('inventory_transaction_id', $tx->id)->sole();
-        $this->assertSame('OUTSIDE_STOCK', $line->from_state);
-        $this->assertSame('AVAILABLE', $line->to_state);
-        $this->assertEquals(2, $line->quantity);
+        $this->assertDatabaseCount('inventory_transactions', 2);
+        $this->assertDatabaseMissing('inventory_transactions', ['transaction_type' => 'INVENTORY_QUANTITY_CORRECTION']);
         $card = app(InventoryStockCardService::class)->forItem($this->item->fresh(), $this->balance());
         $this->assertNull($card['warning']);
         $this->assertSame(8.0, $card['rows']->last()['balance']);
-        $this->assertSame('Total quantity corrected', $card['rows']->last()['remarks']);
     }
 
-    public function test_decrease_is_a_documented_issue_and_zero_is_allowed_when_uncommitted(): void
+    public function test_direct_quantity_decrease_is_rejected_even_when_uncommitted(): void
     {
-        $this->save(['new_total_quantity' => 0])->assertSessionHasNoErrors();
-        $line = DB::table('inventory_transaction_lines')->where('inventory_transaction_id', $this->correction()->id)->sole();
-        $this->assertSame('AVAILABLE', $line->from_state);
-        $this->assertSame('OUTSIDE_STOCK', $line->to_state);
-        $this->assertEquals(6, $line->quantity);
-        $card = app(InventoryStockCardService::class)->forItem($this->item->fresh(), $this->balance());
-        $this->assertSame(0.0, $card['current_balance']);
-        $this->assertNull($card['warning']);
+        $this->save(['new_total_quantity' => 0, 'original_total_quantity' => 6])->assertSessionHasErrors('new_total_quantity');
+        $this->assertSame(6, $this->item->fresh()->total_quantity);
+        $this->assertDatabaseCount('inventory_transactions', 1);
     }
 
-    public function test_future_reservations_and_borrowed_stock_set_the_minimum_without_changing_commitments(): void
+    public function test_metadata_edits_preserve_future_reservations_and_borrowed_stock(): void
     {
         $line = $this->commitments(reserved: 2, borrowed: 2);
         $this->assertEquals(2, $this->balance()['reserved']);
@@ -134,13 +116,15 @@ class InventoryItemQuantityEditTest extends TestCase
         $this->save(['new_total_quantity' => 3, 'specification' => 'Must not save'])->assertSessionHasErrors('new_total_quantity');
         $this->assertSame('Original specification', $this->item->fresh()->specification);
         $this->assertDatabaseCount('audit_events', 0);
-        $this->save(['new_total_quantity' => 4])->assertSessionHasNoErrors();
-        $this->assertEquals(0, $this->balance()['borrower_available']);
+        $this->save(['specification' => 'Updated without changing commitments'])->assertSessionHasNoErrors();
+        $this->assertSame(6, $this->item->fresh()->total_quantity);
+        $this->assertEquals(2, $this->balance()['reserved']);
+        $this->assertEquals(2, $this->balance()['borrowed']);
         $this->assertSame(2, $line->fresh()->actual_released_quantity);
         $this->assertDatabaseHas('allocations', ['id' => $line->allocation_id, 'allocated_quantity' => 4, 'released_quantity' => 2]);
     }
 
-    public function test_laundry_incident_and_manual_maintenance_holds_all_set_the_minimum(): void
+    public function test_metadata_edits_preserve_laundry_incident_and_manual_maintenance_holds(): void
     {
         $line = $this->commitments(reserved: 0, borrowed: 2);
         $line->update(['returned_quantity' => 2]);
@@ -161,24 +145,28 @@ class InventoryItemQuantityEditTest extends TestCase
         $this->assertEquals(1, $balance['incident']);
         $this->assertEquals(1, $balance['condition_hold']);
         $this->save(['new_total_quantity' => 2])->assertSessionHasErrors('new_total_quantity');
-        $this->save(['new_total_quantity' => 3])->assertSessionHasNoErrors();
-        $this->assertEquals(0, $this->balance()['borrower_available']);
+        $this->save(['specification' => 'Updated without changing holds'])->assertSessionHasNoErrors();
+        $this->assertSame(6, $this->item->fresh()->total_quantity);
+        $this->assertEquals(1, $this->balance()['laundry']);
+        $this->assertEquals(1, $this->balance()['incident']);
+        $this->assertEquals(1, $this->balance()['condition_hold']);
     }
 
-    public function test_stale_form_cannot_overwrite_a_new_stock_receipt_or_metadata(): void
+    public function test_stale_form_cannot_overwrite_a_new_stock_receipt(): void
     {
         $this->inventory->recordAdjustment($this->item, $this->head, ['action' => 'STOCK_ADDITION', 'quantity' => 1, 'reason' => 'New delivery.']);
-        $this->save(['specification' => 'Stale edit'])->assertSessionHasErrors('new_total_quantity');
-        $this->assertSame(7, $this->item->fresh()->total_quantity);
+        $this->save(['specification' => 'Stale edit', 'new_total_quantity' => 8, 'original_total_quantity' => 6])->assertSessionHasErrors('new_total_quantity');
         $this->assertSame('Original specification', $this->item->fresh()->specification);
-        $this->assertDatabaseCount('audit_events', 0);
+        $this->save(['specification' => 'Metadata edit after receipt'])->assertSessionHasNoErrors();
+        $this->assertSame(7, $this->item->fresh()->total_quantity);
+        $this->assertSame('Metadata edit after receipt', $this->item->fresh()->specification);
         $this->assertDatabaseMissing('inventory_transactions', ['transaction_type' => 'INVENTORY_QUANTITY_CORRECTION']);
-        $this->get(route('inventory.edit', $this->item))->assertSee('name="original_total_quantity" value="7"', false);
+        $this->get(route('inventory.edit', $this->item))->assertDontSee('name="original_total_quantity"', false);
     }
 
-    public function test_invalid_quantities_and_missing_reason_or_original_are_rejected_atomically(): void
+    public function test_retired_quantity_fields_and_missing_reason_are_rejected_atomically(): void
     {
-        foreach ([['new_total_quantity' => -1], ['new_total_quantity' => 2.5], ['new_total_quantity' => 1000000000], ['new_total_quantity' => ''], ['original_total_quantity' => null], ['change_reason' => '']] as $invalid) {
+        foreach ([['new_total_quantity' => 8], ['new_total_quantity' => -1], ['new_total_quantity' => 2.5], ['new_total_quantity' => 1000000000], ['new_total_quantity' => ''], ['original_total_quantity' => null], ['change_reason' => '']] as $invalid) {
             $this->save($invalid + ['specification' => 'Invalid edit'])->assertSessionHasErrors();
             $this->assertSame(6, $this->item->fresh()->total_quantity);
             $this->assertSame('Original specification', $this->item->fresh()->specification);
@@ -187,7 +175,7 @@ class InventoryItemQuantityEditTest extends TestCase
         $this->assertDatabaseCount('audit_events', 0);
     }
 
-    public function test_audit_failure_rolls_back_quantity_details_and_stock_movements(): void
+    public function test_audit_failure_rolls_back_metadata_without_stock_movements(): void
     {
         $mock = Mockery::mock(AuditService::class);
         $mock->shouldReceive('record')->once()->andThrow(new \RuntimeException('Simulated audit write failure'));
@@ -208,10 +196,9 @@ class InventoryItemQuantityEditTest extends TestCase
 
     public function test_metadata_only_edit_is_audited_without_a_stock_movement_and_noop_is_quiet(): void
     {
-        $this->save(['new_total_quantity' => 6])->assertSessionHasNoErrors();
+        $this->save()->assertSessionHasNoErrors();
         $this->assertDatabaseCount('audit_events', 0);
         $payload = $this->payload(['specification' => 'Updated metadata', 'total_quantity' => 999, 'condition_code' => 'CONDEMNED']);
-        unset($payload['new_total_quantity'], $payload['original_total_quantity']);
         $this->put(route('inventory.update', $this->item), $payload)->assertSessionHasNoErrors();
         $this->assertSame(6, $this->item->fresh()->total_quantity);
         $this->assertSame('SERVICEABLE', $this->item->fresh()->condition_code);
@@ -219,7 +206,7 @@ class InventoryItemQuantityEditTest extends TestCase
         $this->assertSame('Updated metadata', AuditEvent::sole()->after_json['specification']);
     }
 
-    public function test_officers_and_borrowers_cannot_open_or_submit_the_quantity_editor(): void
+    public function test_officers_and_borrowers_cannot_open_or_submit_the_inventory_editor(): void
     {
         foreach ([AccessClassification::SpmuOfficer, AccessClassification::BorrowerOnly] as $role) {
             $user = User::factory()->create(['access_classification' => $role]);
@@ -238,13 +225,17 @@ class InventoryItemQuantityEditTest extends TestCase
         $this->save(['condition_code' => 'SERVICEABLE'])->assertSessionHasNoErrors();
         $this->assertSame('CONDEMNED', $this->item->fresh()->condition_code);
         $this->assertEquals(0, $this->balance()['borrower_available']);
-        $this->assertDatabaseHas('inventory_transaction_lines', ['inventory_transaction_id' => $this->correction()->id, 'to_state' => 'CONDEMNED']);
+        $this->assertSame(6, $this->item->fresh()->total_quantity);
+        $this->assertDatabaseCount('inventory_transactions', 1);
     }
 
     public function test_existing_audit_record_format_shows_quantity_and_recovery_never_reverses_stock(): void
     {
-        $this->save(['specification' => 'Corrected specification'])->assertSessionHasNoErrors();
-        $event = AuditEvent::where('action_code', 'INVENTORY_ITEM_UPDATED')->sole();
+        // Reconstruct an existing historical correction audit, which must remain readable.
+        $before = $this->item->fresh()->toArray();
+        $this->inventory->recordAdjustment($this->item, $this->head, ['action' => 'STOCK_ADDITION', 'quantity' => 2, 'reason' => 'Historical stock receipt.']);
+        $this->item->fresh()->update(['specification' => 'Corrected specification']);
+        $event = app(AuditService::class)->record('INVENTORY_ITEM_UPDATED', $this->item, reason: 'Historical edit.', before: $before, after: $this->item->fresh()->toArray());
         $this->get(route('reports.audit', ['category' => 'INVENTORY', 'record_id' => $this->item->id]))->assertOk()
             ->assertSee('Inventory Item Updated')->assertSee('Operational Changes')->assertSee('Total Quantity')
             ->assertSee('data-audit-operational-changes', false)->assertSee('Corrected specification');

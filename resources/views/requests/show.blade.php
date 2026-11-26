@@ -851,7 +851,6 @@
                 </div>
 
             </div>
-            <x-borrower-contact-details :borrower="$borrowingRequest->borrower" />
         </article>
 
         <div class="spmu-inventory-slot">

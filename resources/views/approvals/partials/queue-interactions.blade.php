@@ -15,7 +15,14 @@
         const footer = document.getElementById('approval-queue-footer');
         const summary = document.getElementById('approval-queue-summary');
         const pagination = document.getElementById('approval-queue-pagination');
-        const perPage = 7;
+        // Only the Head approval queue changes in Revision 007.
+        const pageSize = status ? null : document.getElementById('approval-queue-size');
+        const allowedPageSizes = [5, 10, 25, 50, 100];
+        const getPerPage = () => {
+            if (!pageSize) return 7;
+            const selected = Number(pageSize.value);
+            return allowedPageSizes.includes(selected) ? selected : 5;
+        };
 
         let currentPage = 1;
 
@@ -150,6 +157,7 @@
                 }
             });
 
+            const perPage = getPerPage();
             const totalPages = Math.max(1, Math.ceil(matched.length / perPage));
 
             currentPage = Math.min(Math.max(1, currentPage), totalPages);
@@ -187,6 +195,11 @@
         });
 
         sort?.addEventListener('change', () => {
+            currentPage = 1;
+            render();
+        });
+
+        pageSize?.addEventListener('change', () => {
             currentPage = 1;
             render();
         });

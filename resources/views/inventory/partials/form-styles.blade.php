@@ -29,14 +29,9 @@
 .inventory-form-stock-control-head span, .inventory-form-stock-values span { color: var(--text-muted); font-size: 11px; font-weight: 750; letter-spacing: .035em; text-transform: uppercase; }
 .inventory-form-stock-control-head strong, .inventory-form-stock-values strong { color: var(--heading); font-size: 13px; }
 .inventory-form-stock-values { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface-elevated); }
-.inventory-form-stock-values > div { display: grid; gap: 5px; padding: 13px 12px; }
+.inventory-form-stock-values > div { display: grid; gap: 5px; padding: 13px 12px; align-content: start; min-width: 0; min-height: 116px; }
 .inventory-form-stock-values > div + div { border-left: 1px solid var(--border); }
-.inventory-form-stock-values.is-editable { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.inventory-form-stock-values.is-editable > div { align-content: start; min-width: 0; }
-.inventory-form-stock-values.is-editable > div > strong { padding-top: 9px; }
-.inventory-form-stock-values .inventory-form-quantity-label { margin: 0; color: var(--text-muted); font-size: 11px; font-weight: 750; letter-spacing: .035em; text-transform: uppercase; }
-.inventory-form-stock-values small { color: var(--text-secondary); font-size: 12px; }
-.inventory-form-stock-values small.field-error { color: var(--danger); }
+.inventory-form-stock-values > div > strong { padding-top: 9px; }
 .inventory-form-stock-control-head .inventory-form-admin-badge { display: inline-block; margin-left: 8px; padding: 3px 8px; border-radius: 12px; background: var(--info-bg); color: var(--inventory-blue); font-size: 10px; font-weight: 700; vertical-align: middle; }
 .inventory-form-stock-control p { margin: 0; color: var(--text-secondary); font-size: 12px; line-height: 1.55; }
 .inventory-form-stock-control p strong { color: var(--heading); }
@@ -56,7 +51,7 @@ html[data-theme="dark"] .inventory-form-page .button.inventory-form-save:hover {
     .inventory-form-page .inventory-form-heading { align-items: stretch; }
     .inventory-form-columns { grid-template-columns: minmax(0, 1fr); }
     .inventory-form-page .inventory-form-card { padding: 16px 12px; }
-    .inventory-form-stock-values, .inventory-form-stock-values.is-editable { grid-template-columns: 1fr; }
+    .inventory-form-stock-values { grid-template-columns: 1fr; }
     .inventory-form-stock-values > div + div { border-left: 0; border-top: 1px solid var(--border); }
     .inventory-form-actions { justify-content: stretch; }
     .inventory-form-page .button.inventory-form-cancel, .inventory-form-page .button.inventory-form-save { flex: 1 1 auto; justify-content: center; }

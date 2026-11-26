@@ -73,33 +73,10 @@
                         </a>
                     </div>
 
-                    <div class="inventory-form-stock-values is-editable">
+                    <div class="inventory-form-stock-values">
                         <div>
                             <span>Current Total Quantity</span>
                             <strong>{{ (float) $item->total_quantity + 0 }}</strong>
-                        </div>
-                        <div>
-                            <label class="inventory-form-quantity-label" for="new-total-quantity">New Total Quantity</label>
-                            <input type="hidden" name="original_total_quantity" value="{{ $item->total_quantity }}">
-                            <input
-                                id="new-total-quantity"
-                                type="number"
-                                name="new_total_quantity"
-                                value="{{ old('new_total_quantity', $item->total_quantity) }}"
-                                min="0"
-                                max="999999999"
-                                step="1"
-                                inputmode="numeric"
-                                required
-                                aria-describedby="inventory-quantity-change"
-                                data-inventory-total-quantity
-                                data-current-quantity="{{ $item->total_quantity }}"
-                                data-unit="{{ $item->unit?->unit_name ?: 'Unit' }}"
-                                data-unit-plural="{{ \Illuminate\Support\Str::plural($item->unit?->unit_name ?: 'Unit') }}"
-                            >
-                            <small id="inventory-quantity-change" data-inventory-quantity-change aria-live="polite">No quantity change.</small>
-                            @error('new_total_quantity')<small class="field-error">{{ $message }}</small>@enderror
-                            @error('original_total_quantity')<small class="field-error">{{ $message }}</small>@enderror
                         </div>
                         <div>
                             <span>Master Condition</span>
@@ -343,7 +320,4 @@
         @endif
     </section>
 </div>
-@if($item->exists)
-    @include('inventory.partials.quantity-interactions')
-@endif
 @endsection

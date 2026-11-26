@@ -2,35 +2,31 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const vm = require('node:vm');
+const root = path.resolve(__dirname, '../..');
+const read = file => fs.readFileSync(path.join(root, file), 'utf8');
+const form = read('resources/views/inventory/form.blade.php');
+const styles = read('resources/views/inventory/partials/form-styles.blade.php');
+const retired = read('resources/views/inventory/partials/quantity-interactions.blade.php');
+const controller = read('app/Http/Controllers/InventoryController.php');
+const service = read('app/Services/InventoryService.php');
 
-const script = fs.readFileSync(path.join(__dirname, '../../resources/views/inventory/partials/quantity-interactions.blade.php'), 'utf8').replace(/<\/?script>/g, '');
-
-function editor(value = '6') {
-  let onInput;
-  const input = {value, dataset: {currentQuantity: '6', unit: 'Piece', unitPlural: 'Pieces'}, addEventListener: (event, fn) => {onInput = fn;}};
-  const message = {textContent: ''};
-  vm.runInNewContext(script, {document: {querySelector: selector => selector === '[data-inventory-total-quantity]' ? input : message}});
-  return {message, change: value => {input.value = value; onInput();}};
-}
-
-test('quantity helper describes increases, decreases and unchanged stock in units', () => {
-  const field = editor();
-  assert.equal(field.message.textContent, 'No quantity change.');
-  field.change('8');
-  assert.equal(field.message.textContent, 'Change: +2 Pieces');
-  field.change('5');
-  assert.equal(field.message.textContent, 'Change: −1 Piece');
-  field.change('0');
-  assert.equal(field.message.textContent, 'Change: −6 Pieces');
-  field.change('6');
-  assert.equal(field.message.textContent, 'No quantity change.');
+test('edit physical stock is displayed in two read-only columns', () => {
+  assert.match(form, /Current Total Quantity/);
+  assert.match(form, /Master Condition/);
+  assert.doesNotMatch(form, /new_total_quantity|original_total_quantity|New Total Quantity|data-inventory-total-quantity|quantity-interactions/);
+  assert.match(styles, /\.inventory-form-stock-values \{[^}]*grid-template-columns: repeat\(2,/);
+  assert.doesNotMatch(styles, /inventory-form-stock-values\.is-editable|inventory-form-quantity-label/);
+  assert.doesNotMatch(retired, /<script|addEventListener/);
+  assert.match(form, /name="total_quantity"/); // creation still accepts initial stock
+  assert.match(form, /name="condition_code"/);
 });
 
-test('invalid, empty, fractional and oversized totals do not display a misleading change', () => {
-  const field = editor();
-  for (const value of ['', '-1', '2.5', '1000000000', '<img src=x>']) {
-    field.change(value);
-    assert.equal(field.message.textContent, 'Enter a whole quantity of 0 or more.');
-  }
+test('metadata endpoint rejects retired fields and cannot write stock', () => {
+  assert.match(controller, /'new_total_quantity' => \['missing'\]/);
+  assert.match(controller, /'original_total_quantity' => \['missing'\]/);
+  const method = service.split('public function updateItemDetails(')[1].split('public function recordAdjustment(')[0];
+  assert.doesNotMatch(method, /INVENTORY_QUANTITY_CORRECTION|\$newTotal|\$expectedTotal|->total_quantity\s*=/);
+  assert.match(method, /unset\(\$data\['total_quantity'\], \$data\['condition_code'\]/);
+  assert.match(method, /lockForUpdate/);
+  assert.match(method, /\$committed > 0/);
 });
