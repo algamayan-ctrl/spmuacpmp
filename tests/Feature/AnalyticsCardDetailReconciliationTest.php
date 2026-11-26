@@ -357,6 +357,100 @@ class AnalyticsCardDetailReconciliationTest extends TestCase
         $this->assertSame(3, $detail['bars'][1]['share']);
     }
 
+    public function test_demand_quantity_evidence_reconciles_beyond_the_top_ten_and_uses_release_dates(): void
+    {
+        for ($i = 1; $i <= 12; $i++) {
+            $item = $this->item('Demand evidence item '.$i);
+            $this->request('ACADEMIC', $this->ccs(), Carbon::create(2026, 4, 4, 10), [
+                ['item' => $item, 'quantity' => $i],
+            ]);
+        }
+        $released = $this->item('Released from an earlier filing');
+        // Filing on March 31 is outside April, release on April 1 is inside.
+        $this->release($released, 7, Carbon::create(2026, 4, 1, 10));
+        $totals = $this->analytics->demandTotals($this->from, $this->to, null, null);
+        $requested = $this->detail('demand.requested-quantity');
+        $this->assertSame(12, count($requested['breakdown_tables'][0]['rows']));
+        $this->assertEquals($totals['requested_quantity'], array_sum(array_column($requested['breakdown_tables'][0]['rows'], 3)));
+        $this->assertEquals($totals['requested_quantity'], array_sum(array_column($requested['table']['rows'], 5)));
+        $actual = $this->detail('demand.released-quantity');
+        $this->assertEquals(7, $actual['value']);
+        $this->assertEquals($totals['released_quantity'], array_sum(array_column($actual['table']['rows'], 6)));
+        $this->assertNotContains($released->unique_description, array_column($requested['table']['rows'], 3));
+    }
+
+    public function test_equipment_evidence_uses_distinct_requests_and_same_snapshot_group_and_cohort(): void
+    {
+        $a = $this->item('Microphone A');
+        $b = $this->item('Microphone B');
+        $this->request('ACADEMIC', $this->ccs(), Carbon::create(2026, 4, 4, 10), [
+            ['item' => $a, 'quantity' => 2], ['item' => $b, 'quantity' => 3],
+        ]);
+        $this->release($b, 4, Carbon::create(2026, 4, 10, 10));
+        $this->release($a, 7, Carbon::create(2026, 4, 1, 10)); // filed in March, not the April cohort
+        RequestItem::query()->whereIn('inventory_item_id', [$a->id, $b->id])->update(['description_snapshot' => 'Microphone snapshot']);
+        $requested = $this->analytics->requestedEquipment($this->from, $this->to, null, null, 10)['items'][0];
+        $this->assertSame(2, $requested['requests']); // three lines, two distinct requests
+        $this->assertEquals(9, $requested['quantity']);
+        $detail = $this->detail('demand.requested-items');
+        $row = $detail['breakdown_tables'][0]['rows'][0];
+        $this->assertSame('Microphone snapshot', $row[1]);
+        $this->assertEquals(2, $row[3]);
+        $this->assertEquals(9, $row[4]);
+        $this->assertEquals(4, $row[5]);
+        $this->assertSame('44.4%', $row[6]);
+        $this->assertCount(3, $detail['table']['rows']);
+        $this->assertEquals(9, array_sum(array_column($detail['table']['rows'], 5)));
+        $this->assertEquals(4, array_sum(array_column($detail['table']['rows'], 6)));
+
+        $page = $this->actingAs($this->spmuHead())->get(route('reports.analytics-records', [
+            'section' => 'demand', 'academic_period' => 'month', 'detail' => 'card',
+            'for' => 'demand.requested-items', 'item_name' => 'Microphone snapshot', 'item_unit' => 'Piece',
+        ]));
+        $page->assertOk()->assertSee('Requested and Released Equipment')->assertSee('Equipment Request Records')
+            ->assertSee('data-record-filter-column="3"', false);
+        $page->assertViewHas('detail', fn ($detail) => count($detail['table']['rows']) === 3);
+    }
+
+    public function test_active_units_are_not_limited_to_top_five_and_division_and_trend_reconcile(): void
+    {
+        for ($i = 1; $i <= 7; $i++) {
+            $this->request('ACADEMIC', 'Evidence unit '.$i, Carbon::create(2026, 4, 6, 10));
+        }
+        $this->request('ACADEMIC', 'Evidence unit 1', Carbon::create(2026, 4, 7, 10));
+        $cancelled = $this->request('ACADEMIC', 'Excluded cancelled unit', Carbon::create(2026, 4, 7, 10));
+        $cancelled->update(['status' => RequestStatus::Cancelled]);
+        $active = $this->detail('demand.active-units');
+        $totals = $this->analytics->demandTotals($this->from, $this->to, null, null);
+        $this->assertEquals(7, $totals['active_units']);
+        $this->assertEquals($totals['active_units'], $active['value']);
+        $this->assertCount(7, $active['breakdown_tables'][0]['rows']);
+        $this->assertCount(8, $active['table']['rows']);
+        foreach (['demand.division', 'demand.trend'] as $key) {
+            $detail = $this->detail($key);
+            $this->assertEquals($totals['requests'], array_sum(array_column($detail['breakdown_tables'][0]['rows'], 1)));
+            $this->assertCount(8, $detail['table']['rows']);
+        }
+    }
+
+    public function test_peak_evidence_includes_all_hours_weekdays_and_tied_peaks(): void
+    {
+        for ($i = 0; $i < 5; $i++) {
+            $this->request('ACADEMIC', $this->ccs(), Carbon::create(2026, 4, 6, 9)->addMinutes($i));
+            $this->request('ACADEMIC', $this->ccs(), Carbon::create(2026, 4, 7, 19)->addMinutes($i));
+        }
+        $peak = $this->analytics->peakBorrowing($this->from, $this->to, null, null);
+        $this->assertSame(['Monday', 'Tuesday'], $peak['peak_days']);
+        $this->assertSame(['9 AM', '7 PM'], $peak['peak_hours']);
+        $this->assertEquals(10, array_sum(array_column($peak['hours'], 'count')));
+        $detail = $this->detail('demand.peak');
+        $this->assertCount(7, $detail['breakdown_tables'][0]['rows']);
+        $this->assertCount(24, $detail['breakdown_tables'][1]['rows']);
+        $this->assertEquals(10, array_sum(array_column($detail['breakdown_tables'][0]['rows'], 1)));
+        $this->assertEquals(10, array_sum(array_column($detail['breakdown_tables'][1]['rows'], 1)));
+        $this->assertCount(10, $detail['table']['rows']);
+    }
+
     /* ------------------------------------------------------------------ */
     /* Fixture                                                             */
     /* ------------------------------------------------------------------ */

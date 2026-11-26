@@ -5,6 +5,8 @@ namespace App\Services;
 use App\Support\AnalyticsDrilldown;
 use App\Support\PeriodComparison;
 use Carbon\CarbonInterface;
+use Carbon\Carbon;
+use App\Enums\RequestStatus;
 
 /**
  * Card-level Analytics details.
@@ -41,7 +43,7 @@ class AnalyticsCardDetailService
  */
  public function resolve(array $scope, string $key): array
  {
- return match ($key) {
+ $detail = match ($key) {
  /* Overview */
  'overview.insights' => $this->overviewInsights($scope),
  'overview.return-compliance' => $this->returnCompliance($scope),
@@ -86,6 +88,163 @@ class AnalyticsCardDetailService
  /* scheduled.* details were retired with the Scheduled Demand section. */
  default => $this->unknown($key),
  };
+
+ return in_array($key, [
+ 'demand.requested-quantity', 'demand.released-quantity', 'demand.active-units',
+ 'demand.trend', 'demand.division', 'demand.requested-items', 'demand.units', 'demand.peak',
+ ], true) ? $this->withDemandEvidence($scope, $key, $detail) : $detail;
+ }
+
+ /** Structured drilldown data. The legacy bars are retained for existing callers. */
+ private function withDemandEvidence(array $scope, string $key, array $detail): array
+ {
+ $args = [$scope['from'], $scope['to'], $scope['division'], $scope['unit']];
+ $borrower = $scope['borrower'] ?? null;
+ $breakdowns = [];
+ $table = null;
+ $filter = null;
+ $status = static fn ($row): string => RequestStatus::tryFrom((string) $row->status)?->label() ?? (string) $row->status;
+ $divisions = AnalyticsService::divisions();
+ $group = static fn ($row): string => $row->affiliation_type === 'EXTERNAL' ? 'External Borrower'
+ : ($divisions[$row->division_code] ?? 'Unspecified division');
+ $office = static fn ($row): string => $row->affiliation_type === 'EXTERNAL'
+ ? (trim((string) $row->external_company_name) ?: 'External Borrower')
+ : (string) ($row->office_unit ?? '—');
+ $date = static fn ($value): string => Carbon::parse($value)->format('d M Y');
+ $section = static fn (string $title, array $columns, array $rows): array => compact('title', 'columns', 'rows');
+ $qty = static fn ($value) => (float) $value + 0;
+ $requestRef = static fn ($r): array => ['primary' => $r->request_no, 'url' => route('requests.show', $r->request_id)];
+ $custodyRef = static fn ($r): array => ['primary' => $r->custody_no, 'url' => route('custody.show', $r->custody_id)];
+
+ if (in_array($key, ['demand.requested-quantity', 'demand.requested-items'], true)) {
+ $ranked = $key === 'demand.requested-items';
+ if ($ranked) {
+ $items = $this->analytics->demandFulfillment(...[...$args, 10, $borrower])['items'];
+ $selection = $scope['demand_item'] ?? null;
+ $items = array_map(fn ($item, $index) => $item + ['rank' => $index + 1], $items, array_keys($items));
+ if ($selection !== null) {
+ $items = array_values(array_filter($items, fn ($item) => $item['name'] === $selection['name'] && $item['unit'] === $selection['unit']));
+ }
+ $detail['title'] = $selection === null ? 'Equipment Demand & Actual Usage' : $selection['name'];
+ $detail['value'] = count($items);
+ $detail['value_label'] = 'ranked item types';
+ $detail['note'] = $this->periodNote($scope).' Ranking counts distinct requests per description and unit. Fulfillment uses actual releases of those same request items within the period; percentage is capped at 100% under the existing policy. The dashboard previews five of the top ten groups.';
+ $detail['empty'] = $items === [] ? 'No matching ranked equipment in this reporting period.' : null;
+ if ($selection !== null) $detail['bars'] = null;
+ $detail['stats'] = $selection !== null && $items !== [] ? [
+ ['label' => 'Requests containing item', 'value' => $items[0]['requests']],
+ ['label' => 'Requested quantity', 'value' => $items[0]['requested_quantity']],
+ ['label' => 'Released quantity', 'value' => $items[0]['released_quantity']],
+ ['label' => 'Fulfillment', 'value' => $items[0]['fulfillment'] === null ? '—' : $items[0]['fulfillment'].'%'],
+ ] : [['label' => 'Ranked item types', 'value' => count($items)]];
+ $breakdowns[] = $section('Requested and Released Equipment', ['Rank', 'Equipment', 'Unit', 'Requests', 'Requested Qty.', 'Released Qty.', 'Fulfillment'],
+ array_map(fn ($item) => [$item['rank'], $item['name'], $item['unit'], $item['requests'], $item['requested_quantity'], $item['released_quantity'], $item['fulfillment'] === null ? '—' : $item['fulfillment'].'%'], $items));
+ } else {
+ $items = $this->analytics->requestedEquipment(...[...$args, PHP_INT_MAX, $borrower])['items'];
+ usort($items, fn ($a, $b) => $b['quantity'] <=> $a['quantity']);
+ $breakdowns[] = $section('Requested Quantity by Item', ['Equipment', 'Unit', 'Requests', 'Requested Qty.'],
+ array_map(fn ($item) => [$item['name'], $item['unit'], $item['requests'], $item['quantity']], $items));
+ }
+ $rows = $this->analytics->demandItemEvidence($scope, $ranked ? $items : null);
+ $table = $section($ranked ? 'Equipment Request Records' : 'Requested Item Records',
+ $ranked ? ['Request No.', 'Filed', 'Borrower', 'Item', 'Unit', 'Requested Qty.', 'Released Qty.', 'Status'] : ['Request No.', 'Filed', 'Borrower', 'Item', 'Unit', 'Requested Qty.', 'Status'],
+ $rows->map(fn ($r) => array_merge([$requestRef($r), $date($r->filed_at), $r->borrower, $r->name, $r->unit, $qty($r->quantity)], $ranked ? [$qty($r->released)] : [], [$status($r)]))->all());
+ $filter = 3;
+ } elseif ($key === 'demand.released-quantity') {
+ $items = $this->analytics->equipment(...[...$args, PHP_INT_MAX, $borrower])['items'];
+ $rows = $this->analytics->demandReleaseEvidence($scope);
+ $breakdowns[] = $section('Released Quantity by Item', ['Equipment', 'Unit', 'Released Qty.'], array_map(fn ($r) => [$r['name'], $r['unit'], $r['released']], $items));
+ $table = $section('Physical Release Records', ['Custody No.', 'Request No.', 'Released', 'Borrower', 'Item', 'Unit', 'Released Qty.'],
+ $rows->map(fn ($r) => [$custodyRef($r), $r->request_no, $date($r->released_at), $r->borrower, $r->name, $r->unit, $qty($r->quantity)])->all());
+ $filter = 4;
+ } else {
+ $rows = collect();
+ if (! in_array($key, ['demand.active-units', 'demand.units'], true)) $rows = $this->analytics->demandRequestEvidence($scope);
+ if ($key === 'demand.active-units' || $key === 'demand.units') {
+ if ($key === 'demand.active-units') {
+ // The KPI counts distinct nonempty office names, irrespective of division.
+ $rows = $this->analytics->demandRequestEvidence($scope, true);
+ $units = $this->analytics->requestScope(...[...$args, $borrower])
+ ->whereNotNull('request_versions.office_unit')->where('request_versions.office_unit', '!=', '')
+ ->select('request_versions.office_unit as name')->selectRaw('COUNT(borrowing_requests.id) AS total')
+ ->groupBy('request_versions.office_unit')->orderByDesc('total')->toBase()->get();
+ $detail['value'] = $units->count();
+ $detail['value_label'] = 'active units';
+ $highest = (float) ($units->max('total') ?: 0);
+ $detail['bars'] = $units->map(fn ($r) => ['label' => $r->name, 'value' => (string) $r->total, 'share' => $this->width((float) $r->total, $highest)])->all();
+ $detail['note'] = $this->periodNote($scope).' Counts every distinct nonempty recorded office/unit name, not just the ranked internal units.';
+ $detail['empty'] = $units->isEmpty() ? 'No active borrowing units in this period.' : null;
+ $breakdowns[] = $section('Active Borrowing Units', ['Office / College / Unit', 'Requests Filed'], $units->map(fn ($r) => [$r->name, (int) $r->total])->all());
+ } else {
+ $rankings = $this->analytics->unitRankings(...[...$args, 5, $borrower]);
+ $units = collect($rankings['columns'])->flatMap(fn ($col) => collect($col['units'])->map(fn ($r) => $r + ['division' => $col['label'], 'code' => $col['code']]))->sortByDesc('count')->values();
+ $rows = $this->analytics->demandRequestEvidence($scope, false, $units->all());
+ $rank = 0; $previous = null;
+ $rankRows = $units->map(function ($r, $i) use (&$rank, &$previous) {
+ if ($previous !== $r['count']) $rank = $i + 1;
+ $previous = $r['count'];
+ return [$rank, $r['name'], $r['division'], $r['count']];
+ })->all();
+ $breakdowns[] = $section('Unit Ranking', ['Rank', 'Office / College / Unit', 'Division', 'Requests Filed'], $rankRows);
+ $breakdowns[0]['bar_column'] = 3;
+ $detail['note'] .= ' The detail lists up to five units per division; the dashboard previews the overall top five.';
+ }
+ $table = $section('Borrowing Requests by Unit', ['Request No.', 'Office / Unit', 'Division / Group', 'Borrower', 'Filed', 'Status'],
+ $rows->map(fn ($r) => [$requestRef($r), (string) ($r->office_unit ?? '—'), $group($r), $r->borrower, $date($r->filed_at), $status($r)])->all());
+ $filter = 1;
+ } elseif ($key === 'demand.division') {
+ $groups = $this->analytics->borrowerGroups(...[...$args, $borrower]);
+ $breakdowns[] = $section('Demand by Division', ['Division / Group', 'Requests', 'Share'], $groups['groups']->map(fn ($g) => [$g['label'], $g['count'], $g['percentage'].'%'])->all());
+ $breakdowns[0]['visual'] = 'division';
+ $breakdowns[0]['bar_column'] = 1;
+ $breakdowns[0]['footer'] = ['Total', $groups['total'], '100%'];
+ $breakdowns[0]['note'] = 'Share = group requests ÷ all filed requests × 100 (rounded).';
+ $detail['note'] .= ' Share = group requests divided by all filed requests, multiplied by 100. Displayed shares are rounded.';
+ $table = $section('Requests by Division', ['Request No.', 'Borrower', 'Office / Organization', 'Division / Group', 'Filed', 'Status'], $rows->map(fn ($r) => [$requestRef($r), $r->borrower, $office($r), $group($r), $date($r->filed_at), $status($r)])->all());
+ $filter = 3;
+ } elseif ($key === 'demand.trend') {
+ $trend = $this->analytics->trend(...[...$args, $scope['period'], $borrower]);
+ $total = array_sum(array_column($trend['points'], 'count'));
+ $breakdowns[] = $section('Borrowing Demand Trend', ['Period', 'Requests Filed', 'Share'], array_map(fn ($r) => [$r['label'], $r['count'], $total ? round($r['count'] / $total * 100, 1).'%' : '—'], $trend['points']));
+ $table = $section('Filing History', ['Request No.', 'Borrower', 'Office / Unit', 'Filed Date', 'Filed Time', 'Period Bucket', 'Status'], $rows->map(fn ($r) => [$requestRef($r), $r->borrower, $office($r), $date($r->filed_at), Carbon::parse($r->filed_at)->format('g:i A'), $this->analytics->demandBucketLabel(Carbon::parse($r->filed_at), $scope['period']), $status($r)])->all());
+ $filter = 5;
+ } elseif ($key === 'demand.peak') {
+ $peak = $this->analytics->peakBorrowing(...[...$args, $borrower]);
+ if ($peak['total'] > 0) {
+ $breakdowns[] = $section('Requests by Weekday', ['Weekday', 'Requests Filed'], array_map(fn ($r) => [$r['label'], $r['count']], $peak['days']));
+ $breakdowns[] = $section('Requests by Filing Hour', ['Hour', 'Requests Filed'], array_map(fn ($r) => [$r['label'], $r['count']], $peak['hours']));
+ $breakdowns[0]['bar_column'] = 1;
+ $breakdowns[0]['note'] = $peak['available'] ? 'Busiest weekday(s): '.implode(', ', $peak['peak_days']).'.' : $peak['summary'];
+ $breakdowns[1]['visual'] = 'hours';
+ $breakdowns[1]['peaks'] = $peak['peak_hours'];
+ if (! $peak['available']) $detail['note'] .= ' '.$peak['summary'];
+ }
+ $table = $section('Request Filing History', ['Request No.', 'Borrower', 'Filed Date', 'Filed Time', 'Weekday', 'Filing Hour', 'Status'], $rows->map(fn ($r) => [$requestRef($r), $r->borrower, $date($r->filed_at), Carbon::parse($r->filed_at)->format('g:i A'), Carbon::parse($r->filed_at)->format('l'), Carbon::parse($r->filed_at)->format('g A'), $status($r)])->all());
+ $filter = 4;
+ }
+ }
+
+ // Full-page records already authorize the entire dataset; the older drawer
+ // may still use its historical record limit. Never imply a limited list is complete.
+ $detail['breakdown_tables'] = array_values(array_filter($breakdowns, fn ($b) => $b['rows'] !== []));
+ if ($table !== null) {
+ $detail['table_title'] = $table['title'];
+ $detail['table'] = ['columns' => $table['columns'], 'rows' => array_slice($table['rows'], 0, $scope['record_limit'] ?? PHP_INT_MAX)];
+ $detail['table_filter_column'] = $filter;
+ // Keep equipment names and units distinct when using the existing table filter.
+ if (in_array($key, ['demand.requested-quantity', 'demand.requested-items', 'demand.released-quantity'], true)) {
+ $itemColumn = $key === 'demand.released-quantity' ? 4 : 3;
+ $detail['table_filter_label'] = 'Equipment';
+ $detail['table_filter_values'] = array_map(fn ($r) => $r[$itemColumn].' ('.$r[$itemColumn + 1].')', $detail['table']['rows']);
+ }
+ if ($key === 'demand.peak') $detail['note'] .= ' Filter by weekday or search by filing hour (for example, 7 PM).';
+ if (count($table['rows']) > ($scope['record_limit'] ?? PHP_INT_MAX)) $detail['note'] .= ' The compact view lists only the first records; open Analytics Records for the full evidence.';
+ }
+ if (empty($detail['stats']) && ! empty($detail['breakdown_tables'])) {
+ $detail['stats'] = [['label' => ucfirst($detail['value_label'] ?? 'Result'), 'value' => $detail['value'] ?? '—']];
+ }
+ $detail['structured_demand'] = true;
+ return $detail;
  }
 
  /* Shared shapes */
@@ -396,7 +555,7 @@ class AnalyticsCardDetailService
  private function unitRankings(array $scope): array
  {
  $units = $this->analytics->unitRankings(
- $scope['from'], $scope['to'], $scope['division'], $scope['unit']
+ $scope['from'], $scope['to'], $scope['division'], $scope['unit'], 5, $scope['borrower'] ?? null
  );
 
  $bars = [];
@@ -470,14 +629,14 @@ class AnalyticsCardDetailService
  private function requestedQuantity(array $scope): array
  {
  $requested = $this->analytics->requestedEquipment(
- $scope['from'], $scope['to'], $scope['division'], $scope['unit'], 10, $scope['borrower'] ?? null
+ $scope['from'], $scope['to'], $scope['division'], $scope['unit'], PHP_INT_MAX, $scope['borrower'] ?? null
  );
 
  /*
  * The headline figure comes from the same demandTotals() aggregate the
  * KPI card itself reads, so the detail can never disagree with the
  * number the reader just clicked. requestedEquipment() is only the
- * top-10 breakdown behind the bars below.
+ * full item breakdown behind the bars below.
  */
  $totals = $this->analytics->demandTotals(
  $scope['from'], $scope['to'], $scope['division'], $scope['unit'], $scope['borrower'] ?? null
@@ -489,7 +648,7 @@ class AnalyticsCardDetailService
  * largest requested quantity in the rows shown - never the service's
  * `share`, which is the request-count ranking behind Most Requested
  * Items and would make a bar disagree with the number printed on it.
- * The rows are the ten most frequently requested items, listed here
+ * All requested item groups are listed here
  * by quantity so the bars read in order; the request count stays a
  * secondary field.
  */
@@ -524,7 +683,7 @@ class AnalyticsCardDetailService
  'share' => $this->width((float) ($row['quantity'] ?? 0), $highest),
  ]
  )->all(),
- 'bars_title' => 'Requested quantity by item (ten most frequently requested)',
+ 'bars_title' => 'Requested quantity by item',
  'empty' => $total <= 0 ? 'No equipment was requested during this period.' : null,
  'reports_url' => AnalyticsDrilldown::borrowing(
  $scope['period'], $scope['division'], $scope['unit']
@@ -536,7 +695,7 @@ class AnalyticsCardDetailService
  private function releasedQuantity(array $scope): array
  {
  $equipment = $this->analytics->equipment(
- $scope['from'], $scope['to'], $scope['division'], $scope['unit'], 10, $scope['borrower'] ?? null
+ $scope['from'], $scope['to'], $scope['division'], $scope['unit'], PHP_INT_MAX, $scope['borrower'] ?? null
  );
 
  $totals = $this->analytics->demandTotals(
@@ -633,7 +792,7 @@ class AnalyticsCardDetailService
  private function divisionDemand(array $scope): array
  {
  $groups = $this->analytics->borrowerGroups(
- $scope['from'], $scope['to'], $scope['division'], $scope['unit']
+ $scope['from'], $scope['to'], $scope['division'], $scope['unit'], $scope['borrower'] ?? null
  );
 
  return [

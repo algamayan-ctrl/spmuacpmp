@@ -992,10 +992,11 @@ class AnalyticsService
  CarbonInterface $from,
  CarbonInterface $to,
  ?string $division,
- ?string $unit
+ ?string $unit,
+ ?int $borrower = null
  ): array {
  /* External Borrowers carry no CSPC division; they are their own row, not "Unspecified". */
- $counts = $this->requestScope($from, $to, $division, $unit)
+ $counts = $this->requestScope($from, $to, $division, $unit, $borrower)
  ->selectRaw("CASE WHEN request_versions.affiliation_type = 'EXTERNAL' THEN 'EXTERNAL' ELSE COALESCE(request_versions.division_code, '') END AS division_key")
  ->selectRaw('COUNT(borrowing_requests.id) AS total')
  ->groupBy('division_key')
@@ -1013,7 +1014,7 @@ class AnalyticsService
  ])
  ->values();
 
- $unspecified = (int) ($counts[''] ?? 0);
+ $unspecified = (int) $counts->except([...array_keys(self::divisions()), 'EXTERNAL'])->sum();
 
  if ($unspecified > 0) {
  $groups->push([
@@ -1060,9 +1061,10 @@ class AnalyticsService
  CarbonInterface $to,
  ?string $division,
  ?string $unit,
- int $limit = 5
+ int $limit = 5,
+ ?int $borrower = null
  ): array {
- $rows = $this->requestScope($from, $to, $division, $unit)
+ $rows = $this->requestScope($from, $to, $division, $unit, $borrower)
  ->select('request_versions.division_code', 'request_versions.office_unit')
  ->selectRaw('COUNT(borrowing_requests.id) AS total')
  ->groupBy('request_versions.division_code', 'request_versions.office_unit')
@@ -1186,13 +1188,14 @@ class AnalyticsService
  'request_items.description_snapshot AS name',
  'request_items.unit_snapshot AS unit'
  )
- ->selectRaw('COUNT(*) AS requests')
+ ->selectRaw('COUNT(DISTINCT request_items.request_version_id) AS requests')
  ->selectRaw('SUM(request_items.requested_quantity) AS quantity')
  ->selectRaw('MIN(request_items.inventory_item_id) AS item_id')
  ->orderByDesc('requests')
  ->orderByDesc('quantity')
  /* Ties are broken by name so this ranking and demandFulfillment() agree. */
  ->orderBy('request_items.description_snapshot')
+ ->orderBy('request_items.unit_snapshot')
  ->limit($limit)
  ->get();
 
@@ -1303,47 +1306,35 @@ class AnalyticsService
  $versionIds = $this->requestScope($from, $to, $division, $unit, $borrower)
  ->select('request_versions.id');
 
- $requested = DB::table('request_items')
- ->whereIn('request_items.request_version_id', $versionIds)
- ->groupBy('request_items.inventory_item_id', 'request_items.description_snapshot', 'request_items.unit_snapshot')
- ->select(
- 'request_items.inventory_item_id AS item_id',
- 'request_items.description_snapshot AS name',
- 'request_items.unit_snapshot AS unit'
- )
- ->selectRaw('COUNT(*) AS requests')
- ->selectRaw('SUM(request_items.requested_quantity) AS requested_quantity')
- ->orderByDesc('requests')
- ->orderByDesc('requested_quantity')
- ->orderBy('request_items.description_snapshot')
- ->limit($limit)
- ->get();
-
- if ($requested->isEmpty()) {
- return ['items' => [], 'summary' => null];
- }
-
- $itemIds = $requested->pluck('item_id')->filter()->unique()->values();
- $releasedByItem = collect();
-
- if ($itemIds->isNotEmpty()) {
- $releasedByItem = DB::table('custody_lines')
+ // Match the same description/unit snapshot group used by requestedEquipment.
+ // Never attribute a whole inventory ID's releases to a representative row.
+ $releasedByGroup = DB::table('custody_lines')
  ->join('request_items', 'request_items.id', '=', 'custody_lines.request_item_id')
- ->whereIn(
- 'custody_lines.custody_transaction_id',
- $this->releaseCustodyScope($from, $to, $division, $unit, $borrower)->select('id')
- )
- ->whereIn('request_items.inventory_item_id', $itemIds->all())
+ ->whereIn('custody_lines.custody_transaction_id', $this->releaseCustodyScope($from, $to, $division, $unit, $borrower)->select('id'))
  ->whereIn('request_items.request_version_id', (clone $versionIds))
- ->groupBy('request_items.inventory_item_id')
- ->select('request_items.inventory_item_id AS item_id')
- ->selectRaw('SUM(custody_lines.actual_released_quantity) AS released_quantity')
- ->pluck('released_quantity', 'item_id');
- }
+ ->groupBy('request_items.description_snapshot', 'request_items.unit_snapshot')
+ ->select('request_items.description_snapshot AS name', 'request_items.unit_snapshot AS unit')
+ ->selectRaw('SUM(custody_lines.actual_released_quantity) AS released_quantity');
 
- $rows = $requested->map(function ($row) use ($releasedByItem): array {
+ // SQL equality uses the same collation as the ranking's GROUP BY.
+ $requestedQuery = DB::table('request_items')
+ ->whereIn('request_items.request_version_id', (clone $versionIds))
+ ->groupBy('request_items.description_snapshot', 'request_items.unit_snapshot')
+ ->select('request_items.description_snapshot AS name', 'request_items.unit_snapshot AS unit')
+ ->selectRaw('MIN(request_items.inventory_item_id) AS item_id')
+ ->selectRaw('COUNT(DISTINCT request_items.request_version_id) AS requests')
+ ->selectRaw('SUM(request_items.requested_quantity) AS requested_quantity');
+ $requested = DB::query()->fromSub($requestedQuery, 'demand')
+ ->leftJoinSub($releasedByGroup, 'released_group', function ($join): void {
+ $join->on('demand.name', '=', 'released_group.name')->on('demand.unit', '=', 'released_group.unit');
+ })
+ ->select('demand.*')->selectRaw('COALESCE(released_group.released_quantity, 0) AS released_quantity')
+ ->orderByDesc('demand.requests')->orderByDesc('demand.requested_quantity')
+ ->orderBy('demand.name')->orderBy('demand.unit')->limit($limit)->get();
+
+ $rows = $requested->map(function ($row): array {
  $requestedQty = (float) $row->requested_quantity;
- $releasedQty = (float) ($releasedByItem[$row->item_id] ?? 0);
+ $releasedQty = (float) $row->released_quantity;
 
  return [
  'item_id' => $row->item_id,
@@ -1368,6 +1359,81 @@ class AnalyticsService
  .($leader['requests'] === 1 ? 'request' : 'requests').'.'
  : null,
  ];
+ }
+
+ /** Exact filed request rows for Demand evidence; includes version snapshot identity. */
+ public function demandRequestEvidence(array $scope, bool $activeOnly = false, ?array $rankedUnits = null): Collection
+ {
+ if ($rankedUnits === []) return collect();
+ $query = $this->requestScope($scope['from'], $scope['to'], $scope['division'], $scope['unit'], $scope['borrower'] ?? null);
+ if ($activeOnly) $query->whereNotNull('request_versions.office_unit')->where('request_versions.office_unit', '!=', '');
+ if ($rankedUnits !== null) $query->where(function ($query) use ($rankedUnits): void {
+ foreach ($rankedUnits as $unit) {
+ $query->orWhere(fn ($row) => $row->where('request_versions.division_code', $unit['code'])->where('request_versions.office_unit', $unit['name']));
+ }
+ });
+ return $query
+ ->leftJoin('users', 'users.id', '=', 'borrowing_requests.borrower_user_id')
+ ->orderByRaw('COALESCE(request_versions.submitted_at, borrowing_requests.created_at) DESC')
+ ->orderByDesc('borrowing_requests.id')
+ ->toBase()->get([
+ 'borrowing_requests.id as request_id', 'borrowing_requests.request_no', 'borrowing_requests.status',
+ 'request_versions.id as version_id', 'request_versions.office_unit', 'request_versions.division_code',
+ 'request_versions.affiliation_type', 'request_versions.external_company_name', 'users.full_name as borrower',
+ DB::raw('COALESCE(request_versions.submitted_at, borrowing_requests.created_at) AS filed_at'),
+ ]);
+ }
+
+ /** One row per current-version requested item, optionally limited to ranked snapshot groups. */
+ public function demandItemEvidence(array $scope, ?array $groups = null): Collection
+ {
+ $versions = $this->requestScope($scope['from'], $scope['to'], $scope['division'], $scope['unit'], $scope['borrower'] ?? null)->select('request_versions.id');
+ $releases = DB::table('custody_lines')->whereIn('custody_transaction_id',
+ $this->releaseCustodyScope($scope['from'], $scope['to'], $scope['division'], $scope['unit'], $scope['borrower'] ?? null)->select('id'))
+ ->groupBy('request_item_id')->select('request_item_id')->selectRaw('SUM(actual_released_quantity) AS released');
+ $query = DB::table('request_items')
+ ->join('request_versions', 'request_versions.id', '=', 'request_items.request_version_id')
+ ->join('borrowing_requests', 'borrowing_requests.id', '=', 'request_versions.request_id')
+ ->leftJoin('users', 'users.id', '=', 'borrowing_requests.borrower_user_id')
+ ->leftJoinSub($releases, 'released_line', 'released_line.request_item_id', '=', 'request_items.id')
+ ->whereIn('request_items.request_version_id', $versions);
+ if ($groups !== null) {
+ if ($groups === []) return collect();
+ $query->where(function ($query) use ($groups): void {
+ foreach ($groups as $group) {
+ $query->orWhere(fn ($row) => $row->where('request_items.description_snapshot', $group['name'])->where('request_items.unit_snapshot', $group['unit']));
+ }
+ });
+ }
+ return $query->orderByRaw('COALESCE(request_versions.submitted_at, borrowing_requests.created_at) DESC')
+ ->orderBy('request_items.id')->get([
+ 'request_items.id as line_id', 'request_items.inventory_item_id', 'request_items.request_version_id',
+ 'request_items.description_snapshot as name', 'request_items.unit_snapshot as unit', 'request_items.requested_quantity as quantity',
+ 'borrowing_requests.id as request_id', 'borrowing_requests.request_no', 'borrowing_requests.status', 'users.full_name as borrower',
+ DB::raw('COALESCE(request_versions.submitted_at, borrowing_requests.created_at) AS filed_at'),
+ DB::raw('COALESCE(released_line.released, 0) AS released'),
+ ]);
+ }
+
+ /** One row per custody line from the exact physical-release KPI population. */
+ public function demandReleaseEvidence(array $scope): Collection
+ {
+ return DB::table('custody_lines')
+ ->join('custody_transactions', 'custody_transactions.id', '=', 'custody_lines.custody_transaction_id')
+ ->join('request_items', 'request_items.id', '=', 'custody_lines.request_item_id')
+ ->leftJoin('borrowing_requests', 'borrowing_requests.id', '=', 'custody_transactions.request_id')
+ ->leftJoin('users', 'users.id', '=', 'custody_transactions.borrower_user_id')
+ ->whereIn('custody_lines.custody_transaction_id', $this->releaseCustodyScope($scope['from'], $scope['to'], $scope['division'], $scope['unit'], $scope['borrower'] ?? null)->select('id'))
+ ->orderByDesc('custody_transactions.released_at')->orderBy('custody_lines.id')->get([
+ 'custody_transactions.id as custody_id', 'custody_transactions.custody_no', 'custody_transactions.released_at',
+ 'borrowing_requests.request_no', 'users.full_name as borrower', 'request_items.description_snapshot as name',
+ 'request_items.unit_snapshot as unit', 'custody_lines.actual_released_quantity as quantity',
+ ]);
+ }
+
+ public function demandBucketLabel(CarbonInterface $moment, string $period): string
+ {
+ return $this->bucketLabel($moment, $period);
  }
 
  /**
@@ -2362,8 +2428,8 @@ class AnalyticsService
  }
 
  $dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
- $peakDay = array_search(max($days), $days, true);
- $peakHour = array_search(max($hours), $hours, true);
+ $peakDays = $reliable ? array_map(fn ($i) => $dayNames[$i], array_keys($days, max($days), true)) : [];
+ $peakHours = $reliable ? array_map(fn ($i) => Carbon::createFromTime((int) $i)->format('g A'), array_keys($hours, max($hours), true)) : [];
 
  return [
  'available' => $reliable,
@@ -2376,13 +2442,17 @@ class AnalyticsService
  'share' => max($days) > 0 ? (int) round($days[$index] / max($days) * 100) : 0,
  ])
  ->all(),
- 'peak_day' => $reliable && max($days) > 0 ? $dayNames[$peakDay] : null,
- 'peak_hour' => $reliable && max($hours) > 0
- ? Carbon::createFromTime((int) $peakHour)->format('g A')
- : null,
+ 'hours' => array_map(fn (int $hour): array => [
+ 'label' => Carbon::createFromTime($hour)->format('g A'), 'count' => $hours[$hour],
+ ], range(0, 23)),
+ 'peak_days' => $peakDays,
+ 'peak_hours' => $peakHours,
+ 'peak_day' => $peakDays === [] ? null : implode(', ', $peakDays),
+ 'peak_hour' => $peakHours === [] ? null : implode(', ', $peakHours),
  'summary' => $reliable
- ? 'Most borrowing requests were filed on '.$dayNames[$peakDay]
- .', around '.Carbon::createFromTime((int) $peakHour)->format('g A').'.'
+ ? (count($peakDays) === 1 && count($peakHours) === 1
+ ? 'Most borrowing requests were filed on '.$peakDays[0].', around '.$peakHours[0].'.'
+ : 'Busiest weekday(s): '.implode(', ', $peakDays).'. Busiest hour(s): '.implode(', ', $peakHours).'.')
  : 'Not enough activity to determine a reliable peak.',
  ];
  }

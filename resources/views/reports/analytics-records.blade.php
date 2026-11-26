@@ -9,6 +9,8 @@
  $rows = is_array($table['rows'] ?? null) ? $table['rows'] : [];
  $columns = is_array($table['columns'] ?? null) ? $table['columns'] : [];
  $bars = is_array($detail['bars'] ?? null) ? $detail['bars'] : [];
+ $structuredDemand = ! empty($detail['structured_demand']);
+ $breakdownTables = $structuredDemand ? ($detail['breakdown_tables'] ?? []) : [];
 
  /*
  * Universal composition/distribution contract.
@@ -26,7 +28,7 @@
  * repeat the same fact below it; show one compact empty state instead.
  */
  $hasTableRecords = $table && $rows !== [];
- $hasBreakdown = $bars !== [] || $distribution !== [];
+ $hasBreakdown = ($structuredDemand ? $breakdownTables !== [] : $bars !== []) || $distribution !== [];
  $isEmptyResult = ! empty($detail['empty']) && ! $hasTableRecords && ! $hasBreakdown;
  $canGenerateReport = ! empty($detail['reports_url']) && ! $isEmptyResult;
 
@@ -441,6 +443,59 @@
  display: none !important;
 }
 
+/* Standard Analytics Records: complete metric tiles and inset record controls. */
+.analytics-records-page:not(.is-return-trend) .analytics-records-summary {
+ gap: 12px;
+ padding: 16px;
+ border-top: 0;
+ grid-auto-rows: 1fr;
+}
+.analytics-records-page:not(.is-return-trend) .analytics-records-stat {
+ padding: 16px;
+ border: 1px solid var(--border);
+ border-radius: 9px;
+ background: var(--surface-elevated);
+ overflow-wrap: anywhere;
+}
+.analytics-records-page:not(.is-return-trend) .analytics-records-stat:hover {
+ background: var(--surface-subtle);
+}
+.analytics-records-page:not(.is-return-trend) .analytics-records-summary + .analytics-records-note {
+ padding: 0 16px 16px;
+}
+.analytics-records-page:not(.is-return-trend) .analytics-records-card > .record-table-toolbar {
+ margin: 0;
+ padding: 16px;
+}
+.analytics-records-page:not(.is-return-trend) .analytics-records-card > .record-table-footer {
+ margin-top: 0;
+ padding: 12px 16px;
+}
+@media (max-width: 520px) {
+ .analytics-records-page:not(.is-return-trend) .analytics-records-summary {
+  grid-template-columns: minmax(0, 1fr);
+ }
+}
+
+/* Revision 011-A: independently rendered Demand breakdowns. */
+.analytics-demand-breakdown .analytics-records-table { min-width: 0; }
+.analytics-records-source-link { color: var(--interactive); font-weight: 700; text-decoration: none; }
+.analytics-records-source-link:hover, .analytics-records-source-link:focus-visible { text-decoration: underline; }
+.analytics-demand-breakdown .analytics-records-table th,
+.analytics-demand-breakdown .analytics-records-table td { padding-inline: 16px; }
+.analytics-demand-breakdown .analytics-records-table .is-number { text-align: right; font-variant-numeric: tabular-nums; }
+.analytics-demand-breakdown .demand-evidence-bar { display: block; height: 6px; width: 100%; min-width: 56px; margin-top: 5px; border-radius: 4px; background: var(--surface-subtle); }
+.analytics-demand-breakdown .demand-evidence-bar > span { display: block; height: 100%; border-radius: inherit; background: var(--interactive); }
+.analytics-demand-breakdown .demand-hours { display: grid; grid-template-columns: repeat(auto-fit, minmax(66px, 1fr)); gap: 8px; padding: 16px; }
+.analytics-demand-breakdown .demand-hour { padding: 10px 8px; text-align: center; border: 1px solid var(--border); border-radius: 8px; }
+.analytics-demand-breakdown .demand-hour.is-peak { border-color: var(--interactive); background: var(--surface-subtle); }
+.analytics-demand-breakdown .demand-hour strong { display: block; color: var(--heading); font-size: 16px; }
+.analytics-demand-breakdown .demand-hour span { color: var(--text-secondary); font-size: 11px; }
+.analytics-demand-breakdown .demand-donut { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; padding: 16px; }
+.analytics-demand-breakdown .demand-donut svg { width: 100px; height: 100px; }
+.analytics-demand-breakdown .demand-donut strong { font-size: 21px; color: var(--heading); display: block; }
+.analytics-demand-breakdown .demand-donut-label { font-size: 11px; color: var(--text-secondary); font-weight: 650; }
+
 .analytics-records-distribution {
  display: grid;
  gap: 12px;
@@ -711,6 +766,74 @@
  </section>
  @endif
 
+ @if(! $isEmptyResult && $structuredDemand)
+ @foreach($breakdownTables as $breakdown)
+ @php
+ $visual = $breakdown['visual'] ?? null;
+ $barColumn = $breakdown['bar_column'] ?? null;
+ $largest = $barColumn === null ? 0 : max(0, ...array_map(fn ($row) => (float) ($row[$barColumn] ?? 0), $breakdown['rows']));
+ @endphp
+ <section class="analytics-records-card analytics-demand-breakdown" aria-label="{{ $breakdown['title'] }}">
+ <div class="analytics-records-card-head">
+ <div><p class="analytics-records-eyebrow">Analytics breakdown</p><h2>{{ $breakdown['title'] }}</h2></div>
+ </div>
+ @if($visual === 'hours')
+ <div class="demand-hours" aria-label="Hourly filing counts">
+ @foreach($breakdown['rows'] as $hour)
+ <div class="demand-hour{{ in_array($hour[0], $breakdown['peaks'] ?? [], true) ? ' is-peak' : '' }}">
+ <strong>{{ $hour[1] }}</strong><span>{{ $hour[0] }}</span>
+ </div>
+ @endforeach
+ </div>
+ @else
+ @if($visual === 'division')
+ @php
+ $total = array_sum(array_column($breakdown['rows'], 1));
+ $offset = 0;
+ $tones = ['#2563b5', '#0f978e', '#8257ca', '#94a3b8', '#c88b2c'];
+ @endphp
+ @if($total > 0)
+ <div class="demand-donut">
+ <div><span class="demand-donut-label">TOTAL FILED REQUESTS</span><strong>{{ $total }}</strong></div>
+ <svg viewBox="0 0 120 120" role="img" aria-label="Distribution of {{ $total }} filed requests; exact counts are in the table below">
+ <circle cx="60" cy="60" r="43" fill="none" stroke="var(--border)" stroke-width="19" />
+ @foreach($breakdown['rows'] as $slice)
+ @php $portion = $slice[1] / $total * 100; @endphp
+ <circle cx="60" cy="60" r="43" pathLength="100" fill="none" stroke="{{ $tones[$loop->index % count($tones)] }}" stroke-width="19" stroke-dasharray="{{ $portion }} {{ 100 - $portion }}" stroke-dashoffset="{{ -$offset }}" transform="rotate(-90 60 60)" />
+ @php $offset += $portion; @endphp
+ @endforeach
+ <text x="60" y="66" text-anchor="middle" fill="var(--heading)" font-size="20" font-weight="700">{{ $total }}</text>
+ </svg>
+ </div>
+ @endif
+ @endif
+ <div class="analytics-records-table-wrap">
+ <table class="analytics-records-table">
+ <thead><tr>@foreach($breakdown['columns'] as $column)<th scope="col">{{ $column }}</th>@endforeach</tr></thead>
+ <tbody>
+ @foreach($breakdown['rows'] as $row)
+ <tr>
+ @foreach($row as $index => $cell)
+ <td @if(is_numeric($cell)) class="is-number" @endif>{{ $cell ?? '—' }}
+ @if($index === $barColumn && $largest > 0 && (float) $cell >= 0)
+ <span class="demand-evidence-bar" aria-hidden="true"><span style="width: {{ min(100, (float) $cell / $largest * 100) }}%"></span></span>
+ @endif
+ </td>
+ @endforeach
+ </tr>
+ @endforeach
+ </tbody>
+ @if(! empty($breakdown['footer']))
+ <tfoot><tr>@foreach($breakdown['footer'] as $cell)<td class="{{ $loop->first ? '' : 'is-number' }}"><strong>{{ $cell }}</strong></td>@endforeach</tr></tfoot>
+ @endif
+ </table>
+ </div>
+ @endif
+ @if(! empty($breakdown['note']))<div class="analytics-records-note">{{ $breakdown['note'] }}</div>@endif
+ </section>
+ @endforeach
+ @endif
+
  @if($isEmptyResult)
  {{-- The dedicated compact empty state above is the complete zero-result view. --}}
  @elseif($table && $rows !== [])
@@ -727,7 +850,9 @@
  </div>
 
  <div class="analytics-records-table-wrap">
- <table class="analytics-records-table" data-analytics-record-table data-record-table="Analytics records">
+ <table class="analytics-records-table" data-analytics-record-table data-record-table="Analytics records"
+ @if($structuredDemand && isset($detail['table_filter_column'])) data-record-filter-column="{{ (int) $detail['table_filter_column'] }}" @endif
+ @if($structuredDemand && ! empty($detail['table_filter_label'])) data-record-filter-label="{{ $detail['table_filter_label'] }}" @endif>
  <thead>
  <tr>
  @foreach($columns as $column)
@@ -737,7 +862,7 @@
  </thead>
  <tbody>
  @foreach($rows as $row)
- <tr data-analytics-record-row>
+ <tr data-analytics-record-row @if($structuredDemand && isset($detail['table_filter_values'][$loop->index])) data-record-filter="{{ $detail['table_filter_values'][$loop->index] }}" @endif>
  @foreach($row as $cellIndex => $cell)
 @php
  $columnLabel = (string) ($columns[$cellIndex] ?? '');
@@ -763,7 +888,11 @@
  </span>
  @else
  <span class="analytics-records-cell">
+ @if($structuredDemand && is_array($cell) && ! empty($cell['url']))
+ <a class="analytics-records-source-link" href="{{ $cell['url'] }}">{{ $primary }}</a>
+ @else
  <span class="analytics-records-cell-primary">{{ $primary }}</span>
+ @endif
  @if($secondary !== null && $secondary !== '')
  <span class="analytics-records-cell-secondary">{{ $secondary }}</span>
  @endif
@@ -779,7 +908,11 @@
 
 
  </section>
- @elseif($bars !== [])
+ @elseif($structuredDemand && $breakdownTables !== [])
+ @if(! empty($detail['empty']))
+ <section class="analytics-records-card analytics-records-note">{{ $detail['empty'] }}</section>
+ @endif
+ @elseif($bars !== [] && ! $structuredDemand)
  <section class="analytics-records-card">
  <div class="analytics-records-card-head">
  <div>
@@ -893,6 +1026,8 @@
 
         'supportingTitle' =>
             $detail['supporting_title'] ?? null,
+
+        'structuredDemand' => $structuredDemand,
 
         'displayPeriod' =>
             $detail['display_period'] ?? null,
@@ -1158,6 +1293,7 @@ html[data-theme="dark"]
         });
     }
 
+    if (!detail.structuredDemand) {
     Array.from(
         document.querySelectorAll(
             'p, span, h2, h3'
@@ -1208,6 +1344,8 @@ html[data-theme="dark"]
         element.textContent =
             supportingTitle;
     });
+
+    }
 
     if (detail.displayPeriod) {
 

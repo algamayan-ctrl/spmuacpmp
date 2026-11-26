@@ -144,19 +144,12 @@
 
  $unitLeaderCount = (int) ($rankedUnits->max('count') ?: 0);
 
- $fulfillmentByItem = collect($fulfillment['items'] ?? [])->keyBy('item_id');
-
- $topRequested = collect(array_slice($requested['items'], 0, 5))
- ->map(function (array $row) use ($fulfillmentByItem): array {
- $match = $fulfillmentByItem->get($row['item_id']);
-
- return $row + [
- 'released_quantity' => (float) ($match['released_quantity'] ?? 0),
- 'fulfillment' => $match['fulfillment'] ?? null,
- 'gap_quantity' => (float) ($match['gap_quantity'] ?? max(0, (float) $row['quantity'])),
- ];
- })
- ->all();
+ $topRequested = collect(array_slice($fulfillment['items'] ?? [], 0, 5))
+ ->map(fn (array $row): array => $row + [
+ 'quantity' => $row['requested_quantity'],
+ 'share' => ($fulfillment['items'][0]['requests'] ?? 0) > 0
+ ? (int) round($row['requests'] / $fulfillment['items'][0]['requests'] * 100) : 0,
+ ])->all();
 
  $topReleased = array_slice($released['items'], 0, 5);
 
@@ -387,7 +380,7 @@
  @foreach($divisionLegend as $slice)
  <li>
  @if($slice['code'] && $slice['count'] > 0)
- <a href="{{ AnalyticsDetailLink::to('division', 'demand', $periodSelection, $slice['code'], null, ['for' => $slice['code']]) }}">
+ <a href="{{ AnalyticsDetailLink::to('division', 'demand', $periodSelection, $slice['code'], $unit, ['for' => $slice['code']]) }}">
  <span class="analytics-donut-key is-{{ $slice['tone'] }}" aria-hidden="true"></span>
  <span class="analytics-donut-name">{{ $slice['label'] }}</span>
  <span class="analytics-donut-figure">{{ $slice['count'] }} <small> - {{ $slice['percentage'] }}%</small></span>
@@ -556,7 +549,7 @@
  <li>
  <a
  class="analytics-rank-row"
- href="{{ AnalyticsDetailLink::to('equipment', 'demand', $periodSelection, $division, $unit, ['item' => $row['item_id']]) }}"
+ href="{{ AnalyticsDetailLink::to('card', 'demand', $periodSelection, $division, $unit, ['for' => 'demand.requested-items', 'item_name' => $row['name'], 'item_unit' => $row['unit']]) }}"
  data-chart-tip
  data-tip-title="{{ $row['name'] }}"
  data-tip-rows="{{ json_encode([

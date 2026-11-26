@@ -99,7 +99,13 @@ class AnalyticsDetailService
  'period' => $periodSelection,
  'borrower' => $borrower,
  'record_limit' => $recordLimit ?? self::RECORD_LIMIT,
+ 'demand_view' => $request->input('section') === 'demand',
  ];
+
+ if ($type === 'card' && $request->input('for') === 'demand.requested-items'
+ && is_string($request->input('item_name')) && is_string($request->input('item_unit'))) {
+ $scope['demand_item'] = ['name' => $request->input('item_name'), 'unit' => $request->input('item_unit')];
+ }
 
  $detail = match ($type) {
  'requests' => $this->requests($scope),
@@ -126,6 +132,18 @@ class AnalyticsDetailService
 
  if ($detail === null) {
  return null;
+ }
+
+ if ($type === 'outcomes' && $request->input('section') === 'demand') {
+ $outcomes = $this->analytics->requestOutcomes($from, $to, $division, $unit, $borrower);
+ $detail['structured_demand'] = true;
+ $detail['breakdown_tables'] = $outcomes['total'] > 0 ? [[
+ 'title' => 'Request Outcomes Breakdown',
+ 'columns' => ['Outcome', 'Requests', 'Share'],
+ 'rows' => array_map(fn ($row) => [$row['label'], $row['count'], $row['share'] === null ? '—' : $row['share'].'%'], $outcomes['groups']),
+ ]] : [];
+ $detail['table_title'] = 'Request Outcome Records';
+ $detail['table_filter_column'] = 4;
  }
 
  return array_merge(
@@ -539,7 +557,7 @@ class AnalyticsDetailService
  OrganizationalStructure::label($code),
  'Division detail',
  $code,
- null
+ ! empty($scope['demand_view']) ? $scope['unit'] : null
  );
  }
 
@@ -566,7 +584,7 @@ class AnalyticsDetailService
  $released = $this->analytics->equipment($scope['from'], $scope['to'], $division, $unit, 5, $scope['borrower']);
  $returns = $this->analytics->returns($scope['from'], $scope['to'], $division, $unit, $scope['borrower']);
 
- return [
+ $detail = [
  'title' => $title,
  'value' => $overview['total'],
  'value_label' => 'requests filed',
@@ -597,6 +615,22 @@ class AnalyticsDetailService
  : null,
  'reports_url' => AnalyticsDrilldown::borrowing($scope['period'], $division, $unit),
  ];
+ if (! empty($scope['demand_view'])) {
+ $evidence = $this->analytics->demandRequestEvidence(array_merge($scope, ['division' => $division, 'unit' => $unit]));
+ $detail['structured_demand'] = true;
+ $detail['note'] = 'Filed requests for the recorded organizational scope and period. Current custody and overdue figures remain current-state metrics. Equipment summaries below retain their existing top-five scope.';
+ $detail['breakdown_tables'] = array_values(array_filter([
+ ['title' => 'Most Requested Items', 'columns' => ['Equipment', 'Requests', 'Requested Qty.'], 'rows' => $detail['table']['rows'] ?? []],
+ ['title' => 'Most Actually Used Items', 'columns' => ['Equipment', 'Unit', 'Released Qty.'], 'rows' => array_map(fn ($row) => [$row['name'], $row['unit'], $row['released']], $released['items'])],
+ ], fn ($table) => $table['rows'] !== []));
+ $detail['table_title'] = 'Filed Request Records';
+ $detail['table_filter_column'] = 2;
+ $detail['table'] = ['columns' => ['Request No.', 'Borrower', 'Office / Unit', 'Filed', 'Status'],
+ 'rows' => $evidence->take((int) $scope['record_limit'])->map(fn ($row) => [$row->request_no, $row->borrower, $this->affiliationLabel($row), $this->date($row->filed_at), RequestStatus::tryFrom((string) $row->status)?->label() ?? (string) $row->status])->all()];
+ if ($evidence->count() > $scope['record_limit']) $detail['note'] .= ' Compact view: first records only; use Analytics Records for the complete list.';
+ }
+ return $detail;
+
  }
 
  /** @param array<string, mixed> $scope */
