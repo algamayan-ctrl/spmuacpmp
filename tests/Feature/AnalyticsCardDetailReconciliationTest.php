@@ -709,6 +709,133 @@ class AnalyticsCardDetailReconciliationTest extends TestCase
         $this->assertSame($old->custody_no, $selected['table']['rows'][0][0]['primary']);
     }
 
+    public function test_overview_filed_request_records_match_demand_and_keep_source_links_and_filters(): void
+    {
+        $head = $this->spmuHead();
+        $filed = $this->request('ACADEMIC', $this->ccs(), $this->from->copy()->addDay());
+        $rejected = $this->request('ACADEMIC', $this->ccs(), $this->from->copy()->addDays(2));
+        $rejected->update(['status' => RequestStatus::Rejected]);
+        $cancelled = $this->request('ACADEMIC', $this->ccs(), $this->from->copy()->addDays(3));
+        $cancelled->update(['status' => RequestStatus::Cancelled]);
+        $this->request('ADMINISTRATION', $this->hrmo(), $this->from->copy()->addDays(3));
+        $this->request('ACADEMIC', $this->ccs(), $this->from->copy()->subMonth());
+
+        $detail = $this->overviewRecord('requests', [], 'ACADEMIC', $this->ccs());
+        $totals = $this->analytics->demandTotals($this->from, $this->to, 'ACADEMIC', $this->ccs());
+        $this->assertSame(2, $totals['requests']);
+        $this->assertSame($totals['requests'], $detail['value']);
+        $this->assertCount(2, $detail['table']['rows']);
+        $this->assertEqualsCanonicalizing([$filed->request_no, $rejected->request_no], array_column(array_column($detail['table']['rows'], 0), 'primary'));
+        $this->assertEqualsCanonicalizing([route('requests.show', $filed->id), route('requests.show', $rejected->id)], array_column(array_column($detail['table']['rows'], 0), 'url'));
+        $this->assertEquals($detail['value'], array_sum(array_column(array_slice($detail['stats'], 1), 'value')));
+        $this->assertSame(6, $detail['table_filter_column']);
+
+        $this->actingAs($head)->get(route('reports.analytics-records', [
+            'section' => 'overview', 'academic_period' => 'month', 'detail' => 'requests', 'group' => 'ACADEMIC', 'unit' => $this->ccs(),
+        ]))->assertOk()->assertSee('Filed Requests')->assertSee(route('requests.show', $filed->id), false)->assertDontSee($cancelled->request_no);
+    }
+
+    public function test_overview_current_custody_and_overdue_use_current_population_and_outstanding_quantity(): void
+    {
+        $item = $this->item('Overview custody fixture');
+        $head = $this->spmuHead();
+        $this->release($item, 10, $this->from->copy()->subDays(8));
+        $partial = CustodyTransaction::query()->latest('id')->firstOrFail();
+        $partial->lines()->firstOrFail()->update(['returned_quantity' => 4]);
+        $partial->update(['status' => 'PARTIALLY_RETURNED']);
+        $this->release($item, 2, $this->from->copy()->addDays(2));
+        $notDue = CustodyTransaction::query()->latest('id')->firstOrFail();
+        $notDue->update(['due_at' => $this->to->copy()]);
+        $this->returnFixture($item, $head, 3, 3, 8, 'OBLIGATION_OPEN');
+        $this->release($item, 4, $this->from->copy()->addDay());
+        CustodyTransaction::query()->latest('id')->firstOrFail()->update(['status' => 'CANCELLED', 'closed_at' => now()]);
+        $this->release($item, 5, $this->from->copy()->addDay());
+        CustodyTransaction::query()->latest('id')->firstOrFail()->update(['status' => 'CANCELLED', 'released_at' => null, 'closed_at' => now()]);
+
+        $overview = $this->analytics->overview($this->from, $this->to, null, null);
+        $out = $this->overviewRecord('currently-out');
+        $this->assertSame(2, $overview['on_custody']);
+        $this->assertSame($overview['on_custody'], $out['value']);
+        $this->assertCount(2, $out['table']['rows']);
+        $rows = collect($out['table']['rows'])->keyBy(fn ($row) => $row[0]['primary']);
+        $this->assertEquals(6, $rows[$partial->custody_no][4]);
+        $this->assertEquals(2, $rows[$notDue->custody_no][4]);
+        $this->assertEquals(8, collect($out['stats'])->firstWhere('label', 'Outstanding quantity (recorded)')['value']);
+        $this->assertSame(route('custody.show', $partial->id), $rows[$partial->custody_no][0]['url']);
+        $this->assertStringContainsString('Current custody snapshot', $out['period_label']);
+
+        $overdue = $this->overviewRecord('follow-up');
+        $returns = $this->analytics->returns($this->from, $this->to, null, null);
+        $this->assertSame(1, $overview['needs_follow_up']);
+        $this->assertSame($returns['overdue'], $overdue['value']);
+        $this->assertCount(1, $overdue['table']['rows']);
+        $this->assertSame($partial->custody_no, $overdue['table']['rows'][0][0]['primary']);
+        $this->assertEquals(6, $overdue['table']['rows'][0][3]);
+        foreach (['currently-out' => 'Current Custody Records', 'follow-up' => 'Overdue Custody Records'] as $type => $title) {
+            $this->actingAs($head)->get(route('reports.analytics-records', ['section' => 'overview', 'academic_period' => 'month', 'detail' => $type]))
+                ->assertOk()->assertSee($title)->assertSee($partial->custody_no);
+        }
+    }
+
+    public function test_overview_available_stock_and_low_availability_reuse_complete_inventory_evidence(): void
+    {
+        $stock = $this->item('Overview zero-available fixture', 10);
+        $edge = $this->item('Overview threshold fixture', 4);
+        $this->item('Overview available fixture', 8);
+        $this->release($stock, 10, $this->from->copy()->addDay());
+        $this->release($edge, 3, $this->from->copy()->addDay());
+        $inventory = app(\App\Services\InventoryService::class);
+        $available = $this->overviewRecord('card', ['for' => 'inventory.available']);
+        $risk = $this->overviewRecord('low-availability');
+        $this->assertEquals($this->analytics->inventory($inventory)['totals']['available'], $available['value']);
+        $this->assertEquals($available['value'], array_sum(array_column($available['table']['rows'], 3)));
+        $this->assertEquals($this->analytics->lowAvailability($inventory)['count'], $risk['value']);
+        $this->assertSame($this->detail('inventory.low-availability')['table'], $risk['table']);
+        $this->assertCount(2, $risk['table']['rows']);
+        $this->assertContains('Overview zero-available fixture', array_column(array_column($risk['table']['rows'], 0), 'primary'));
+        $this->assertStringContainsString('Inventory snapshot', $risk['period_label']);
+        $this->analytics->forBorrowerType('EXTERNAL');
+        $this->assertEquals($available['table'], $this->overviewRecord('card', ['for' => 'inventory.available'])['table']);
+        $this->assertEquals($risk['table'], $this->overviewRecord('low-availability')['table']);
+    }
+
+    public function test_overview_priority_accountability_and_compliance_reuse_return_evidence(): void
+    {
+        $item = $this->item('Overview priority fixture');
+        $head = $this->spmuHead();
+        $this->returnFixture($item, $head, 2, 2, 3, 'CLOSED');
+        $late = $this->returnFixture($item, $head, 3, 3, 8, 'INCIDENT_OPEN');
+        $incident = \App\Models\Incident::query()->create([
+            'incident_no' => 'PC-OVERVIEW-OPEN', 'custody_transaction_id' => $late->id,
+            'borrower_user_id' => $late->borrower_user_id, 'reported_by_user_id' => $head->id,
+            'incident_type' => 'DAMAGE', 'reported_at' => $this->from->copy()->addDays(8), 'status' => 'OPEN',
+        ]);
+        \App\Models\IncidentLine::query()->create([
+            'incident_id' => $incident->id, 'custody_line_id' => $late->lines()->firstOrFail()->id,
+            'quantity' => 2, 'observed_condition' => 'DAMAGED', 'disposition_state' => 'RETURNED',
+        ]);
+        $metrics = $this->analytics->returns($this->from, $this->to, null, null);
+        $compliance = $this->overviewRecord('card', ['for' => 'overview.return-compliance']);
+        $cases = $this->overviewRecord('card', ['for' => 'returns.issues']);
+        $this->assertSame($metrics['completed'], count($compliance['table']['rows']));
+        $this->assertEquals($metrics['on_time_rate'].'%', $compliance['value']);
+        $this->assertSame($metrics['open_cases'], count($cases['table']['rows']));
+        $this->assertSame($this->returnCard('returns.issues')['table'], $cases['table']);
+        $this->assertEquals(2, $cases['table']['rows'][0][5]);
+        foreach (['overview.return-compliance' => 'Completed Return Records', 'returns.issues' => 'Open Accountability Records'] as $key => $title) {
+            $this->actingAs($head)->get(route('reports.analytics-records', ['section' => 'overview', 'academic_period' => 'month', 'detail' => 'card', 'for' => $key]))
+                ->assertOk()->assertSee($title);
+        }
+    }
+
+    private function overviewRecord(string $type, array $params = [], ?string $division = null, ?string $unit = null): array
+    {
+        return app(\App\Services\AnalyticsDetailService::class)->using($this->analytics)->resolve(
+            $type, \Illuminate\Http\Request::create('/', 'GET', ['section' => 'overview'] + $params),
+            $this->from, $this->to, $division, $unit, 'month', null, PHP_INT_MAX
+        );
+    }
+
     private function returnCard(string $key): array
     {
         return $this->details->resolve([

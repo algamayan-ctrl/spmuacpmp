@@ -100,8 +100,11 @@ class AnalyticsDetailService
  'borrower' => $borrower,
  'record_limit' => $recordLimit ?? self::RECORD_LIMIT,
  'demand_view' => $request->input('section') === 'demand',
+ 'overview_records_view' => $recordLimit === PHP_INT_MAX && $request->input('section') === 'overview',
  'return_records_view' => $recordLimit === PHP_INT_MAX && ($request->input('section') === 'returns'
- || ($type === 'card' && $request->input('for') === 'overview.return-compliance')),
+ || ($type === 'card' && $request->input('for') === 'overview.return-compliance')
+ || ($request->input('section') === 'overview' && ($type === 'follow-up'
+ || ($type === 'card' && $request->input('for') === 'returns.issues')))),
  ];
 
  if ($type === 'card' && $request->input('for') === 'demand.requested-items'
@@ -125,7 +128,9 @@ class AnalyticsDetailService
  'requests' => $this->requests($scope),
  'currently-out' => $this->currentlyOut($scope),
  'follow-up' => $this->followUp($scope),
- 'low-availability' => $this->lowAvailability($scope),
+ 'low-availability' => $scope['overview_records_view']
+ ? (new AnalyticsInventoryDetailService($this->analytics, $this->inventory))->resolve($scope, 'inventory.low-availability')
+ : $this->lowAvailability($scope),
  'equipment' => $this->equipment($scope, (string) $request->input('item', '')),
  'division' => $this->division($scope, (string) $request->input('for', '')),
  'unit' => $this->unit($scope, (string) $request->input('for', '')),
@@ -152,6 +157,12 @@ class AnalyticsDetailService
 
  if ($scope['return_records_view'] && in_array($type, ['returns', 'follow-up', 'overdue-aging', 'late-rate'], true)) {
  $detail = (new AnalyticsReturnDetailService($this->analytics))->record($scope, $type, $request, $detail);
+ }
+
+ // Overview's Priority Insights describes cases opened in the period, not
+ // necessarily borrowings filed in that period. Keep the shared case evidence.
+ if ($scope['overview_records_view'] && $type === 'card' && $request->input('for') === 'returns.issues') {
+ $detail['context'] = 'Accountability cases opened and property incidents reported in the selected period';
  }
 
  if ($type === 'outcomes' && $request->input('section') === 'demand') {
@@ -245,6 +256,12 @@ class AnalyticsDetailService
 
  return [
  'title' => 'Requests',
+ ...(($scope['overview_records_view'] ?? false) ? [
+ 'structured_overview' => true,
+ 'table_title' => 'Filed Requests',
+ 'table_filter_column' => 6,
+ 'table_filter_label' => 'Status',
+ ] : []),
  'value' => $overview['total'],
  'context' => 'Filed borrowing demand and review workload',
  'note' => 'Filed requests in the selected period. Drafts, cancelled and expired requests are excluded.',
@@ -262,7 +279,7 @@ class AnalyticsDetailService
  'bars_title' => 'By division',
  'table' => $requestRows->isEmpty() ? null : [
  'columns' => ['Request No.', 'Borrower', 'Office / College / Unit', 'Filed', 'Schedule', 'Return', 'Status'],
- 'rows' => $requestRows->map(function (BorrowingRequest $request): array {
+ 'rows' => $requestRows->map(function (BorrowingRequest $request) use ($scope): array {
  $version = $request->currentVersion;
  $status = $request->status instanceof RequestStatus
  ? $request->status->label()
@@ -270,7 +287,9 @@ class AnalyticsDetailService
  ?? str((string) $request->status)->replace('_', ' ')->title()->toString());
 
  return [
- (string) $request->request_no,
+ ($scope['overview_records_view'] ?? false)
+ ? ['primary' => (string) $request->request_no, 'url' => route('requests.show', $request->id)]
+ : (string) $request->request_no,
  (string) ($request->borrower?->full_name ?? ''),
  $this->affiliationLabel($version),
  $this->date($version?->submitted_at ?? $request->created_at),
@@ -312,6 +331,10 @@ class AnalyticsDetailService
  $rows = $records['rows'];
  $total = $records['total'];
 
+ if ($scope['overview_records_view'] ?? false) {
+ return $this->overviewCustody($scope, $records);
+ }
+
  return [
  'title' => 'Currently Out',
  'value' => $total,
@@ -335,6 +358,51 @@ class AnalyticsDetailService
  'reports_url' => AnalyticsDrilldown::custody(
  $scope['period'], $scope['division'], $scope['unit']
  ),
+ ];
+ }
+
+ /** Full Overview evidence: a custody transaction is not a quantity of stock. */
+ private function overviewCustody(array $scope, array $records): array
+ {
+ $custodies = $records['rows'];
+ $custodies->loadMissing(['requestVersion', 'lines.requestItem.inventoryItem', 'laundryJob']);
+ $lateReturns = app(LateReturnService::class);
+ $rows = $custodies->map(function (CustodyTransaction $custody) use ($lateReturns): array {
+ $quantities = $this->returnMetrics->quantities($custody);
+
+ return [
+ ['primary' => (string) $custody->custody_no, 'url' => route('custody.show', $custody->id)],
+ (string) ($custody->borrower?->full_name ?? '—'),
+ $this->affiliationLabel($custody->requestVersion),
+ $this->date($custody->released_at),
+ $quantities['outstanding'] + 0,
+ $this->date($this->returnMetrics->expectedReturnDate($custody)),
+ LateReturnService::linenStateLabel($lateReturns->linenReturnState($custody)) ?? '—',
+ $this->custodyLabel($custody->status),
+ ];
+ })->all();
+
+ return [
+ 'title' => 'On Custody',
+ 'value' => $records['total'],
+ 'value_label' => 'borrowings',
+ 'context' => 'Current physical custody, as of today',
+ 'period_label' => 'Current custody snapshot — '.now()->format('d M Y'),
+ 'note' => 'The headline counts borrowing transactions, not inventory units. It uses the same current physical-custody population as the Overview card, independent of the selected reporting period. Outstanding quantity is the recorded released-minus-returned balance; linen verification is shown separately because physical receipt may precede quantity encoding. Status is the recorded workflow status. The formal custody report may not reproduce this exact physical-outstanding population.',
+ 'stats' => [
+ ['label' => 'Outstanding borrowings', 'value' => $records['total']],
+ ['label' => 'Outstanding quantity (recorded)', 'value' => array_sum(array_column($rows, 4))],
+ ],
+ 'structured_overview' => true,
+ 'table_title' => 'Current Custody Records',
+ 'table_filter_column' => 7,
+ 'table_filter_label' => 'Status',
+ 'table' => [
+ 'columns' => ['Custody No.', 'Borrower', 'Office / Unit', 'Released', 'Outstanding Qty. (Recorded)', 'Effective Due', 'Linen Verification', 'Status'],
+ 'rows' => $rows,
+ ],
+ 'empty' => $records['total'] === 0 ? 'No equipment is currently out on custody.' : null,
+ 'reports_url' => AnalyticsDrilldown::custody($scope['period'], $scope['division'], $scope['unit']),
  ];
  }
 

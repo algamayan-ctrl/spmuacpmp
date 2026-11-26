@@ -12,7 +12,8 @@
  $structuredDemand = ! empty($detail['structured_demand']);
  // Inventory evidence uses the same independent breakdown/record renderer as Demand.
  $structuredReturns = ! empty($detail['structured_returns']);
- $structuredEvidence = $structuredDemand || ! empty($detail['structured_inventory']) || $structuredReturns;
+ $structuredOverview = ! empty($detail['structured_overview']);
+ $structuredEvidence = $structuredDemand || ! empty($detail['structured_inventory']) || $structuredReturns || $structuredOverview;
  $breakdownTables = $structuredEvidence ? ($detail['breakdown_tables'] ?? []) : [];
 
  /*
