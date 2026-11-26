@@ -10,7 +10,9 @@
  $columns = is_array($table['columns'] ?? null) ? $table['columns'] : [];
  $bars = is_array($detail['bars'] ?? null) ? $detail['bars'] : [];
  $structuredDemand = ! empty($detail['structured_demand']);
- $breakdownTables = $structuredDemand ? ($detail['breakdown_tables'] ?? []) : [];
+ // Inventory evidence uses the same independent breakdown/record renderer as Demand.
+ $structuredEvidence = $structuredDemand || ! empty($detail['structured_inventory']);
+ $breakdownTables = $structuredEvidence ? ($detail['breakdown_tables'] ?? []) : [];
 
  /*
  * Universal composition/distribution contract.
@@ -28,7 +30,7 @@
  * repeat the same fact below it; show one compact empty state instead.
  */
  $hasTableRecords = $table && $rows !== [];
- $hasBreakdown = ($structuredDemand ? $breakdownTables !== [] : $bars !== []) || $distribution !== [];
+ $hasBreakdown = ($structuredEvidence ? $breakdownTables !== [] : $bars !== []) || $distribution !== [];
  $isEmptyResult = ! empty($detail['empty']) && ! $hasTableRecords && ! $hasBreakdown;
  $canGenerateReport = ! empty($detail['reports_url']) && ! $isEmptyResult;
 
@@ -496,6 +498,10 @@
 .analytics-demand-breakdown .demand-donut strong { font-size: 21px; color: var(--heading); display: block; }
 .analytics-demand-breakdown .demand-donut-label { font-size: 11px; color: var(--text-secondary); font-weight: 650; }
 
+/* Revision 011-B: inventory-only composition inside the existing metric summary. */
+.analytics-records-inventory-composition { padding: 0 16px 16px; }
+.analytics-records-inventory-composition .analytics-records-distribution-segment.is-laundry { background: #18a4b9; }
+
 .analytics-records-distribution {
  display: grid;
  gap: 12px;
@@ -677,13 +683,24 @@
  @endforeach
  </div>
 
+ @if(! empty($detail['inventory_distribution']) && $distribution !== [])
+ <div class="analytics-records-inventory-composition">
+ <div class="analytics-records-distribution-bar" role="img" aria-label="{{ collect($distribution)->map(fn ($segment) => $segment['label'].' '.$segment['value'].' units ('.round($segment['share'], 1).'%)')->implode(', ') }}">
+ @foreach($distribution as $segment)
+ @if($segment['share'] > 0)
+ <span class="analytics-records-distribution-segment is-{{ $segment['tone'] }}" style="width: {{ $segment['share'] }}%" title="{{ $segment['label'] }}: {{ $segment['value'] }} ({{ round($segment['share'], 1) }}%)" aria-hidden="true"></span>
+ @endif
+ @endforeach
+ </div>
+ </div>
+ @endif
  @if(! empty($detail['note']))
  <div class="analytics-records-note">{{ $detail['note'] }}</div>
  @endif
  </section>
  @endif
 
- @if(! $isEmptyResult && $distribution !== [])
+ @if(! $isEmptyResult && $distribution !== [] && empty($detail['inventory_distribution']))
  <section class="analytics-records-card" aria-label="Analytics distribution">
  <div class="analytics-records-card-head">
  <div>
@@ -766,7 +783,7 @@
  </section>
  @endif
 
- @if(! $isEmptyResult && $structuredDemand)
+ @if(! $isEmptyResult && $structuredEvidence)
  @foreach($breakdownTables as $breakdown)
  @php
  $visual = $breakdown['visual'] ?? null;
@@ -851,8 +868,8 @@
 
  <div class="analytics-records-table-wrap">
  <table class="analytics-records-table" data-analytics-record-table data-record-table="Analytics records"
- @if($structuredDemand && isset($detail['table_filter_column'])) data-record-filter-column="{{ (int) $detail['table_filter_column'] }}" @endif
- @if($structuredDemand && ! empty($detail['table_filter_label'])) data-record-filter-label="{{ $detail['table_filter_label'] }}" @endif>
+ @if($structuredEvidence && isset($detail['table_filter_column'])) data-record-filter-column="{{ (int) $detail['table_filter_column'] }}" @endif
+ @if($structuredEvidence && ! empty($detail['table_filter_label'])) data-record-filter-label="{{ $detail['table_filter_label'] }}" @endif>
  <thead>
  <tr>
  @foreach($columns as $column)
@@ -862,7 +879,7 @@
  </thead>
  <tbody>
  @foreach($rows as $row)
- <tr data-analytics-record-row @if($structuredDemand && isset($detail['table_filter_values'][$loop->index])) data-record-filter="{{ $detail['table_filter_values'][$loop->index] }}" @endif>
+ <tr data-analytics-record-row @if($structuredEvidence && isset($detail['table_filter_values'][$loop->index])) data-record-filter="{{ $detail['table_filter_values'][$loop->index] }}" @endif>
  @foreach($row as $cellIndex => $cell)
 @php
  $columnLabel = (string) ($columns[$cellIndex] ?? '');
@@ -888,7 +905,7 @@
  </span>
  @else
  <span class="analytics-records-cell">
- @if($structuredDemand && is_array($cell) && ! empty($cell['url']))
+ @if($structuredEvidence && is_array($cell) && ! empty($cell['url']))
  <a class="analytics-records-source-link" href="{{ $cell['url'] }}">{{ $primary }}</a>
  @else
  <span class="analytics-records-cell-primary">{{ $primary }}</span>
@@ -908,11 +925,11 @@
 
 
  </section>
- @elseif($structuredDemand && $breakdownTables !== [])
+ @elseif($structuredEvidence && $breakdownTables !== [])
  @if(! empty($detail['empty']))
  <section class="analytics-records-card analytics-records-note">{{ $detail['empty'] }}</section>
  @endif
- @elseif($bars !== [] && ! $structuredDemand)
+ @elseif($bars !== [] && ! $structuredEvidence)
  <section class="analytics-records-card">
  <div class="analytics-records-card-head">
  <div>
@@ -1027,7 +1044,7 @@
         'supportingTitle' =>
             $detail['supporting_title'] ?? null,
 
-        'structuredDemand' => $structuredDemand,
+        'structuredDemand' => $structuredEvidence,
 
         'displayPeriod' =>
             $detail['display_period'] ?? null,

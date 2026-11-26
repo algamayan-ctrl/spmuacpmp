@@ -43,6 +43,9 @@ class AnalyticsCardDetailService
  */
  public function resolve(array $scope, string $key): array
  {
+ if (in_array($key, AnalyticsInventoryDetailService::KEYS, true)) {
+ return (new AnalyticsInventoryDetailService($this->analytics, $this->inventory))->resolve($scope, $key);
+ }
  $detail = match ($key) {
  /* Overview */
  'overview.insights' => $this->overviewInsights($scope),
@@ -63,18 +66,6 @@ class AnalyticsCardDetailService
  'demand.low-usage' => $this->lowUsage($scope),
  'demand.processing' => $this->processing($scope),
  'demand.peak' => $this->peak($scope),
-
- /* Inventory Health */
- 'inventory.available' => $this->inventoryState($scope, 'available'),
- 'inventory.reserved' => $this->inventoryState($scope, 'reserved'),
- 'inventory.custody' => $this->inventoryState($scope, 'custody'),
- 'inventory.attention' => $this->inventoryState($scope, 'attention'),
- 'inventory.availability' => $this->inventoryDistribution($scope, 'Inventory Availability'),
- 'inventory.distribution' => $this->inventoryDistribution($scope, 'Current Inventory Distribution'),
- 'inventory.low-availability' => $this->lowAvailability($scope),
- 'inventory.utilization' => $this->releasedItems($scope, 'Utilization'),
- 'inventory.operational' => $this->operationalInventory($scope),
- 'inventory.coverage' => $this->coverage($scope),
 
  /* Borrowing & Return Performance */
  'returns.trend' => $this->returnTrend($scope),
@@ -944,196 +935,6 @@ class AnalyticsCardDetailService
 
  /* Inventory Health */
 
- /** @return array<string, mixed> */
- private function inventoryState(array $scope, string $facet): array
- {
- $inventory = $this->analytics->inventory($this->inventory);
-
- /*
- * The four cards and their supporting rows read the same current
- * portfolio snapshot. The reporting-period filter is intentionally
- * not applied to physical stock: these figures answer "what is the
- * inventory state now?"
- */
- $totals = $inventory['totals'] ?? [];
- $available = (float) ($totals['available'] ?? 0);
- $allocated = (float) ($totals['allocated'] ?? 0);
- $onCustody = (float) ($totals['on_custody'] ?? 0);
- $attention = (float) ($totals['attention'] ?? $totals['problem'] ?? 0);
-
- [$title, $value, $context] = match ($facet) {
- 'available' => ['Available Units', $available, 'Usable and free to allocate'],
- 'reserved' => ['Reserved / Allocated', $allocated, 'Committed to an approved request'],
- 'custody' => ['On Custody', $onCustody, 'Released and not yet returned'],
- default => ['Attention Needed', $attention, 'Held out of circulation'],
- };
-
- $records = collect($inventory['records'] ?? [])
- ->filter(fn (array $row): bool => match ($facet) {
- 'available' => (float) ($row['available'] ?? 0) > 0,
- 'reserved' => (float) ($row['reserved'] ?? 0) > 0,
- 'custody' => (float) ($row['on_custody'] ?? 0) > 0,
- default => (float) ($row['attention'] ?? 0) > 0,
- })
- ->sortByDesc(fn (array $row): float => match ($facet) {
- 'available' => (float) ($row['available'] ?? 0),
- 'reserved' => (float) ($row['reserved'] ?? 0),
- 'custody' => (float) ($row['on_custody'] ?? 0),
- default => (float) ($row['attention'] ?? 0),
- })
- ->values();
-
- $limit = max(1, (int) ($scope['record_limit'] ?? 25));
- $shown = $records->take($limit);
-
- $table = $shown->isEmpty()
- ? null
- : [
- 'columns' => [
- 'Item / Equipment',
- 'Category',
- 'Serviceable Total',
- 'Reserved / Allocated',
- 'On Custody',
- 'Available',
- 'Availability',
- 'Status',
- ],
- 'rows' => $shown->map(function (array $row) use ($facet): array {
- $status = match ($facet) {
- 'reserved' => 'Reserved / Allocated',
- 'custody' => 'On Custody',
- 'attention' => 'Attention Needed',
- default => (string) ($row['status'] ?? 'Available'),
- };
-
- return [
- [
- 'primary' => (string) ($row['name'] ?? 'Inventory item'),
- 'secondary' => trim((string) ($row['unit'] ?? '')) !== ''
- ? 'Unit: '.(string) $row['unit']
- : null,
- ],
- (string) ($row['category'] ?? 'Uncategorized'),
- (string) (($row['serviceable'] ?? 0) + 0),
- (string) (($row['reserved'] ?? 0) + 0),
- (string) (($row['on_custody'] ?? 0) + 0),
- (string) (($row['available'] ?? 0) + 0),
- ((int) ($row['share'] ?? 0)).'%',
- $status,
- ];
- })->all(),
- ];
-
- return [
- 'title' => $title,
- 'value' => $value,
- 'value_label' => 'units',
- 'context' => $context,
- 'period_label' => 'Inventory snapshot as of '.now()->format('d M Y'),
- 'note' => 'Current institution-wide inventory snapshot. Availability reflects physical stock as of today and is not affected by the selected reporting period.',
- 'stats' => [
- ['label' => 'Available', 'value' => $available],
- ['label' => 'Reserved / allocated', 'value' => $allocated],
- ['label' => 'On custody', 'value' => $onCustody],
- ['label' => 'Attention needed', 'value' => $attention],
- ],
- 'table_title' => 'Inventory Records',
- 'table' => $table,
- 'record_count' => $records->count(),
- 'empty' => $records->isEmpty()
- ? match ($facet) {
- 'available' => 'No inventory units are currently available for allocation.',
- 'reserved' => 'No inventory units are currently reserved or allocated.',
- 'custody' => 'No inventory units are currently on custody.',
- default => 'No inventory units currently require attention.',
- }
- : null,
- 'reports_url' => match ($facet) {
- 'available' => AnalyticsDrilldown::inventory(
- $scope['period'], ['availability_status' => 'AVAILABLE']
- ),
- 'reserved' => AnalyticsDrilldown::inventory(
- $scope['period'], ['availability_status' => 'ALLOCATED']
- ),
- 'custody' => AnalyticsDrilldown::inventory(
- $scope['period'], ['availability_status' => 'ON_CUSTODY']
- ),
- default => null,
- },
- ];
- }
-
- /** @return array<string, mixed> */
- private function inventoryDistribution(array $scope, string $title = 'Current Inventory Distribution'): array
- {
- $detail = $this->inventoryState($scope, 'available');
-
- return array_merge($detail, [
- 'title' => $title,
- 'value' => null,
- 'context' => 'How stock is split across states',
- 'note' => $this->inventoryCurrentNote()
- .' Every unit sits in exactly one state, so the states sum to the serviceable total.',
- 'reports_url' => AnalyticsDrilldown::inventory($scope['period']),
- ]);
- }
-
- /** @return array<string, mixed> */
- private function lowAvailability(array $scope): array
- {
- $low = $this->analytics->lowAvailability($this->inventory, 10);
-
- return [
- 'title' => 'Low Availability Watch',
- 'value' => $low['count'],
- 'value_label' => $low['count'] === 1 ? 'item type' : 'item types',
- 'context' => 'At or below '.(int) ($low['threshold'] * 100).'% usable stock',
- 'note' => $this->inventoryCurrentNote()
- .' An item is listed when its usable stock falls to or below '
- .(int) ($low['threshold'] * 100).'% of its serviceable total. Units out on '
- .'custody, in laundry or held by an incident are excluded from what counts as usable.',
- 'bars' => $low['items'] === [] ? null : array_map(
- static fn (array $row): array => [
- 'label' => $row['name'],
- 'value' => ($row['available'] + 0).' of '.($row['stock'] + 0).' available',
- 'share' => $row['share'],
- ],
- $low['items']
- ),
- 'empty' => $low['count'] === 0
- ? 'No item type is currently below the availability threshold.'
- : null,
- 'reports_url' => AnalyticsDrilldown::inventory(
- $scope['period'], ['availability_status' => 'LOW_AVAILABILITY']
- ),
- ];
- }
-
- /** @return array<string, mixed> */
- private function operationalInventory(array $scope): array
- {
- $inventory = $this->analytics->inventory($this->inventory);
- $totals = $inventory['totals'] ?? [];
-
- return [
- 'title' => 'Operational Inventory Status',
- 'value' => null,
- 'context' => 'Stock held outside normal allocation',
- 'note' => $this->inventoryCurrentNote()
- .' Laundry is shown separately from condition/incident follow-up. '
- .' Breakdown values describe the same current inventory snapshot as the KPI cards.',
- 'stats' => [
- ['label' => 'In laundry', 'value' => $totals['laundry'] ?? 0],
- ['label' => 'Maintenance', 'value' => $totals['maintenance'] ?? 0],
- ['label' => 'Held by incident', 'value' => $totals['incident'] ?? 0],
- ['label' => 'Attention needed', 'value' => $totals['attention'] ?? $totals['problem'] ?? 0],
- ],
- ];
- }
-
- /** @return array<string, mixed> */
-
  /* Borrowing & Return Performance */
 
  /** @return array<string, mixed> */
@@ -1671,35 +1472,4 @@ class AnalyticsCardDetailService
 
  /** @return array<string, mixed> */
 
- /** @return array<string, mixed> */
-
- // Pulled-main descriptive stock/release history; no projected values.
- private function coverage(array $scope): array
- {
- $coverage = $this->analytics->stockCoverage(
- $this->inventory, $scope['from'], $scope['to'], 10, $scope['division'], $scope['unit'], $scope['borrower'] ?? null
- );
-
- $rows = $coverage['items'] ?? [];
-
- return [
- 'title' => 'Coverage Detail',
- 'value' => $coverage['total'] ?? count($rows),
- 'value_label' => 'items released in this period',
- 'context' => 'Available stock and release history',
- 'note' => 'Available stock is the current count for each item. Released quantity and '
- .'release transactions are those recorded in the selected period. No usage rate '
- .'or future shortage is estimated from them. '.$this->periodNote($scope),
- 'stats' => array_map(
- static fn (array $row): array => [
- 'label' => $row['name'],
- 'value' => ($row['available'] + 0).' available - '.($row['released'] + 0).' released',
- ],
- array_slice($rows, 0, 4)
- ),
- 'empty' => $rows === []
- ? ($coverage['summary'] ?? 'No equipment was released during this period.')
- : null,
- ];
- }
 }

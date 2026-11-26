@@ -1137,6 +1137,7 @@ class AnalyticsService
  ->groupBy('request_items.description_snapshot', 'request_items.unit_snapshot')
  ->select('request_items.description_snapshot AS name', 'request_items.unit_snapshot AS unit')
  ->selectRaw('SUM(custody_lines.actual_released_quantity) AS released')
+ ->selectRaw('COUNT(DISTINCT custody_lines.custody_transaction_id) AS release_transactions')
  /* A representative id so the row can link to its own records. */
  ->selectRaw('MIN(request_items.inventory_item_id) AS item_id')
  ->orderByDesc('released')
@@ -1152,6 +1153,7 @@ class AnalyticsService
  'unit' => $row->unit,
  'item_id' => $row->item_id,
  'released' => (float) $row->released + 0,
+ 'release_transactions' => (int) $row->release_transactions,
  'share' => $highest > 0 ? round((float) $row->released / $highest * 100) : 0,
  ])->all(),
  'summary' => $rows->isEmpty()
@@ -1424,10 +1426,14 @@ class AnalyticsService
  ->leftJoin('borrowing_requests', 'borrowing_requests.id', '=', 'custody_transactions.request_id')
  ->leftJoin('users', 'users.id', '=', 'custody_transactions.borrower_user_id')
  ->whereIn('custody_lines.custody_transaction_id', $this->releaseCustodyScope($scope['from'], $scope['to'], $scope['division'], $scope['unit'], $scope['borrower'] ?? null)->select('id'))
+ ->when(isset($scope['inventory_group']), fn ($query) => $query
+ ->where('request_items.description_snapshot', $scope['inventory_group']['name'])
+ ->where('request_items.unit_snapshot', $scope['inventory_group']['unit']))
  ->orderByDesc('custody_transactions.released_at')->orderBy('custody_lines.id')->get([
  'custody_transactions.id as custody_id', 'custody_transactions.custody_no', 'custody_transactions.released_at',
  'borrowing_requests.request_no', 'users.full_name as borrower', 'request_items.description_snapshot as name',
  'request_items.unit_snapshot as unit', 'custody_lines.actual_released_quantity as quantity',
+ 'request_items.inventory_item_id as item_id',
  ]);
  }
 
@@ -2186,7 +2192,17 @@ class AnalyticsService
  'name' => $item->unique_description,
  'category' => (string) ($item->category?->category_name ?? 'Uncategorized'),
  'unit' => (string) ($item->unit?->unit_name ?? ''),
+ 'total' => (float) ($balance['total'] ?? 0) + 0,
+ 'condition' => (string) $item->condition_code,
  'serviceable' => $stock + 0,
+ 'laundry' => (float) ($balance['laundry'] ?? 0) + 0,
+ 'incident' => $incident + 0,
+ 'condition_hold' => $conditionHold + 0,
+ 'maintenance' => $maintenance + 0,
+ 'maintenance_outside' => $item->condition_code === 'DAMAGED_MAINTENANCE' ? (float) ($balance['total'] ?? 0) : 0,
+ 'lost' => (float) ($balance['lost'] ?? 0) + 0,
+ 'stolen' => (float) ($balance['stolen'] ?? 0) + 0,
+ 'destroyed' => (float) ($balance['destroyed'] ?? 0) + 0,
  'reserved' => $reserved + 0,
  'on_custody' => $borrowed + 0,
  'available' => $usable + 0,

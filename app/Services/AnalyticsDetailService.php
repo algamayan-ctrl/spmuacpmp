@@ -107,6 +107,14 @@ class AnalyticsDetailService
  $scope['demand_item'] = ['name' => $request->input('item_name'), 'unit' => $request->input('item_unit')];
  }
 
+ if ($type === 'card' && in_array($request->input('for'), AnalyticsInventoryDetailService::KEYS, true)) {
+ if ($request->filled('item') && is_string($request->input('item'))) {
+ $scope['inventory_item'] = $request->input('item');
+ }
+ if ($request->input('for') === 'inventory.utilization' && is_string($request->input('item_name')) && is_string($request->input('item_unit'))) {
+ $scope['inventory_group'] = ['name' => $request->input('item_name'), 'unit' => $request->input('item_unit')];
+ }
+ }
  $detail = match ($type) {
  'requests' => $this->requests($scope),
  'currently-out' => $this->currentlyOut($scope),
@@ -117,7 +125,9 @@ class AnalyticsDetailService
  'unit' => $this->unit($scope, (string) $request->input('for', '')),
  'returns' => $this->returns($scope, (string) $request->input('state', 'on-time')),
  'borrower' => $this->borrower($scope, (string) $request->input('for', '')),
- 'coverage' => $this->coverage($scope, (string) $request->input('item', '')),
+ 'coverage' => $request->input('section') === 'inventory'
+ ? (new AnalyticsInventoryDetailService($this->analytics, $this->inventory))->coverageItem($scope, (string) $request->input('item', ''))
+ : $this->coverage($scope, (string) $request->input('item', '')),
  'trend' => $this->trend($scope, (int) $request->input('bucket', 0)),
  'outcomes' => $this->outcomes($scope, (string) $request->input('outcome', '')),
  'overdue-aging' => $this->overdueAging($scope, (string) $request->input('bucket', '')),

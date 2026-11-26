@@ -286,7 +286,11 @@ class AnalyticsAuditCorrectionsTest extends TestCase
         $scope = ['section' => 'inventory', 'academic_period' => 'month'];
         $this->get(route('analytics.index', $scope + ['detail' => 'card', 'for' => 'inventory.coverage']))
             ->assertOk()->assertViewHas('detail', fn (array $detail) => $detail['title'] === 'Coverage Detail'
-                && $detail['value'] === 1 && $detail['stats'][0]['value'] === '1 available - 9 released');
+                && $detail['value'] === 1
+                && $detail['breakdown_tables'][0]['rows'][0][0] === 'Sound System'
+                && (float) $detail['breakdown_tables'][0]['rows'][0][1] === 1.0
+                && (float) $detail['breakdown_tables'][0]['rows'][0][3] === 9.0
+                && count($detail['table']['rows']) === 3);
         $this->get(route('analytics.index', $scope + ['detail' => 'coverage', 'item' => $item->id]))
             ->assertOk()->assertViewHas('detail', fn (array $detail) => $detail['title'] === 'Sound System'
                 && (float) $detail['value'] === 1.0 && $detail['value_label'] === 'units available now');

@@ -156,7 +156,7 @@
  @foreach($availabilityRows as $row)
  <li>
  <a
- href="{{ AnalyticsDetailLink::to('equipment', 'inventory', $periodSelection, null, null, ['item' => $row['item_id']]) }}"
+ href="{{ AnalyticsDetailLink::to('card', 'inventory', $periodSelection, $selectedDivision === 'all' ? null : $selectedDivision, $selectedUnit === 'all' ? null : $selectedUnit, ['for' => 'inventory.availability', 'item' => $row['item_id']]) }}"
  data-chart-tip
  data-tip-title="{{ $row['name'] }}"
  data-tip-rows="{{ json_encode([
@@ -302,7 +302,7 @@
  @foreach($lowAvailability['items'] as $row)
  <li>
  <a
- href="{{ AnalyticsDetailLink::to('equipment', 'inventory', $periodSelection, null, null, ['item' => $row['item_id']]) }}"
+ href="{{ AnalyticsDetailLink::to('card', 'inventory', $periodSelection, $selectedDivision === 'all' ? null : $selectedDivision, $selectedUnit === 'all' ? null : $selectedUnit, ['for' => 'inventory.low-availability', 'item' => $row['item_id']]) }}"
  aria-label="View Details for {{ $row['name'] }}"
  >
  <span class="analytics-watch-main">
@@ -354,7 +354,7 @@
  <li>
  <a
  class="analytics-rank-row"
- href="{{ AnalyticsDetailLink::to('equipment', 'inventory', $periodSelection, null, null, ['item' => $row['item_id']]) }}"
+ href="{{ AnalyticsDetailLink::to('card', 'inventory', $periodSelection, $selectedDivision === 'all' ? null : $selectedDivision, $selectedUnit === 'all' ? null : $selectedUnit, ['for' => 'inventory.utilization', 'item_name' => $row['name'], 'item_unit' => $row['unit']]) }}"
  data-chart-tip
  data-tip-title="{{ $row['name'] }}"
  data-tip-rows="{{ json_encode([
@@ -440,7 +440,7 @@
  @foreach($coverageRows as $row)
  <li>
  <a
- href="{{ AnalyticsDetailLink::to('coverage', 'inventory', $periodSelection, null, null, ['item' => $row['item_id']]) }}"
+ href="{{ AnalyticsDetailLink::to('coverage', 'inventory', $periodSelection, $selectedDivision === 'all' ? null : $selectedDivision, $selectedUnit === 'all' ? null : $selectedUnit, ['item' => $row['item_id']]) }}"
  aria-label="View stock and release history for {{ $row['name'] }}: {{ $num($row['available']) }} available now, {{ $num($row['released']) }} released this period"
  >
  <span class="analytics-coverage-main">

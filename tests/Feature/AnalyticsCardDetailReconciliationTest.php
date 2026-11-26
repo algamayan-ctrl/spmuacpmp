@@ -458,6 +458,120 @@ class AnalyticsCardDetailReconciliationTest extends TestCase
     /**
      * @return array<string, mixed>
      */
+    public function test_inventory_distribution_and_risk_include_zero_available_and_use_unrounded_threshold(): void
+    {
+        $zero = $this->item('Fully on custody', 10);
+        $edge = $this->item('Exact risk threshold', 4);
+        $rounded = $this->item('Above risk threshold', 1000);
+        $maintenance = $this->item('Whole item under maintenance', 4);
+        $maintenance->update(['condition_code' => 'DAMAGED_MAINTENANCE']);
+        $this->release($zero, 10, $this->from->copy()->addDay());
+        $this->release($edge, 3, $this->from->copy()->addDay());
+        $this->release($rounded, 746, $this->from->copy()->addDay());
+
+        $distribution = $this->detail('inventory.distribution');
+        $records = collect($distribution['table']['rows'])->keyBy(fn ($r) => $r[0]['primary']);
+        $this->assertEquals(0, $records['Fully on custody'][3]);
+        $this->assertEquals(10, $records['Fully on custody'][5]);
+        $this->assertEquals(0, $records['Whole item under maintenance'][2]);
+        $this->assertEquals(4, $records['Whole item under maintenance'][8]);
+        $this->assertEquals($this->analytics->inventory(app(\App\Services\InventoryService::class))['totals']['serviceable'], $distribution['value']);
+        $this->assertEquals(0, $records->sum(fn ($r) => abs($r[2] - array_sum(array_slice($r, 3, 5)))));
+        $this->assertEquals(100, array_sum(array_column($distribution['distribution'], 'share')));
+        $this->assertStringContainsString('/inventory/'.$zero->id, $records['Fully on custody'][0]['url']);
+
+        $availability = collect($this->detail('inventory.availability')['table']['rows'])->keyBy(fn ($r) => $r[0]['primary']);
+        $this->assertTrue($availability->has('Fully on custody'));
+        $this->assertFalse($availability->has('Whole item under maintenance'));
+        $risk = $this->detail('inventory.low-availability');
+        $this->assertEquals(2, $risk['value']);
+        $names = array_map(fn ($r) => $r[0]['primary'], $risk['table']['rows']);
+        $this->assertContains('Fully on custody', $names);
+        $this->assertContains('Exact risk threshold', $names);
+        $this->assertNotContains('Above risk threshold', $names);
+    }
+
+    public function test_inventory_commitment_evidence_reconciles_partial_reservations_and_custody(): void
+    {
+        $item = $this->item('Partial commitments', 20);
+        $this->release($item, 6, $this->from->copy()->addDay());
+        $line = CustodyLine::query()->firstOrFail();
+        $line->update(['returned_quantity' => 2]);
+        $allocation = Allocation::query()->findOrFail($line->allocation_id);
+        $allocation->update(['allocated_quantity' => 10, 'released_quantity' => 6, 'restored_quantity' => 1, 'status' => 'PARTIALLY_RELEASED']);
+
+        $reserved = $this->detail('inventory.reserved');
+        $custody = $this->detail('inventory.custody');
+        $this->assertEquals(3, $reserved['value']);
+        $this->assertEquals(3, array_sum(array_column($reserved['table']['rows'], 3)));
+        $this->assertEquals(4, $custody['value']);
+        $this->assertEquals(4, array_sum(array_column($custody['table']['rows'], 3)));
+        $this->assertStringContainsString('/requests/', $reserved['table']['rows'][0][1]['url']);
+        $this->assertStringContainsString('/custody/', $custody['table']['rows'][0][1]['url']);
+
+        CustodyTransaction::query()->findOrFail($line->custody_transaction_id)->update(['status' => 'CANCELLED', 'released_at' => null]);
+        $this->assertEquals(0, $this->detail('inventory.custody')['value']);
+        $this->assertSame([], $this->detail('inventory.custody')['table']['rows']);
+    }
+
+    public function test_inventory_attention_and_operational_records_show_net_maintenance_and_source_references(): void
+    {
+        $item = $this->item('Manual hold evidence', 10);
+        $inventory = app(\App\Services\InventoryService::class);
+        $head = $this->spmuHead();
+        $inventory->recordAdjustment($item, $head, ['action' => 'PLACE_UNDER_MAINTENANCE', 'quantity' => 3, 'reason' => 'Verified maintenance hold']);
+        $inventory->recordAdjustment($item->fresh(), $head, ['action' => 'RETURN_MAINTENANCE_TO_SERVICE', 'quantity' => 1]);
+        $attention = $this->detail('inventory.attention');
+        $operational = $this->detail('inventory.operational');
+        $this->assertEquals(2, $attention['value']);
+        $this->assertEquals(2, $attention['table']['rows'][0][1]);
+        $this->assertEquals(2, $attention['table']['rows'][0][3]);
+        $this->assertEquals(2, $attention['table']['rows'][0][5]);
+        $this->assertStringContainsString('Stock movement #', $attention['table']['rows'][0][7]);
+        $this->assertEquals(2, collect($operational['stats'])->pluck('value','label')['Maintenance']);
+        $this->assertEquals(2, collect($operational['stats'])->pluck('value','label')['Attention needed']);
+        $this->assertEquals(8, $this->detail('inventory.available')['value']);
+    }
+
+    public function test_inventory_coverage_and_utilization_include_full_release_population_and_preserve_group_evidence(): void
+    {
+        for ($i = 1; $i <= 12; $i++) {
+            $item = $this->item('Released item '.$i, 20);
+            $this->release($item, $i, $this->from->copy()->addDay());
+        }
+        $coverage = $this->detail('inventory.coverage');
+        $this->assertEquals(12, $coverage['value']);
+        $this->assertCount(12, $coverage['breakdown_tables'][0]['rows']);
+        $this->assertEquals(78, array_sum(array_column($coverage['table']['rows'], 4)));
+        $utilization = $this->detail('inventory.utilization');
+        $this->assertCount(12, $utilization['breakdown_tables'][0]['rows']);
+        $this->assertEquals(78, array_sum(array_column($utilization['table']['rows'], 4)));
+        $this->assertEquals(78, collect($utilization['stats'])->pluck('value','label')['Released quantity']);
+
+        $scope = ['section' => 'inventory', 'academic_period' => 'month', 'detail' => 'card', 'for' => 'inventory.utilization', 'item_name' => 'Released item 1', 'item_unit' => 'Piece'];
+        $this->actingAs($this->spmuHead())->get(route('reports.analytics-records', $scope))
+            ->assertOk()->assertSee('Released Quantity by Item')->assertSee('Physical Release Records')
+            ->assertViewHas('detail', fn ($detail) => count($detail['table']['rows']) === 1 && (float) $detail['table']['rows'][0][4] === 1.0);
+    }
+
+    public function test_inventory_snapshot_is_institution_wide_but_release_evidence_uses_selected_period_and_borrower_type(): void
+    {
+        $item = $this->item('Scoped inventory release evidence', 20);
+        $this->release($item, 2, $this->from->copy()->subDay());
+        $this->release($item, 3, $this->from->copy()->addDay());
+        $this->release($item, 4, $this->from->copy()->addDays(2));
+        $lastCustody = CustodyTransaction::query()->latest('id')->firstOrFail();
+        RequestVersion::query()->findOrFail($lastCustody->request_version_id)->update(['affiliation_type' => 'EXTERNAL']);
+        $this->assertEquals(11, $this->detail('inventory.available')['value']);
+        $this->assertEquals(7, collect($this->detail('inventory.utilization')['stats'])->pluck('value','label')['Released quantity']);
+        $analytics = $this->analytics->forBorrowerType('EXTERNAL');
+        $details = $this->details->using($analytics);
+        $scope = ['from' => $this->from, 'to' => $this->to, 'division' => null, 'unit' => null, 'period' => 'month', 'borrower' => null];
+        $this->assertEquals(11, $details->resolve($scope, 'inventory.available')['value']);
+        $this->assertEquals(4, array_sum(array_column($details->resolve($scope, 'inventory.utilization')['table']['rows'], 4)));
+        $this->assertEquals(4, array_sum(array_column($details->resolve($scope, 'inventory.coverage')['table']['rows'], 4)));
+    }
+
     private function detail(string $key): array
     {
         return $this->details->resolve([
