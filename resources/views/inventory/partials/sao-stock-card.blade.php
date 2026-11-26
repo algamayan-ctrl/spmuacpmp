@@ -1,11 +1,15 @@
 @php
+    $canExportStockCard = in_array(auth()->user()?->access_classification, [\App\Enums\AccessClassification::SpmuHead, \App\Enums\AccessClassification::SpmuOfficer], true);
     $printQuery = array_filter(['stock_q' => $card['search'], 'stock_movement' => $card['movement']], fn ($value) => $value !== '');
 @endphp
 <article class="card sao-stock-card" id="stock-card">
     <div class="sao-stock-card-heading">
         <div><h2>Stock Card</h2></div>
-        @if($isActionOfficer)
-            <a class="button secondary small" href="{{ route('inventory.stock-card.print', array_merge(['inventory' => $item->id], $printQuery)) }}" target="_blank" rel="noopener"><x-icon name="printer" size="17" /> Print Stock Card</a>
+        @if($canExportStockCard)
+            <div class="sao-stock-card-actions">
+                <a class="button secondary small sao-stock-card-print-action" href="{{ route('inventory.stock-card.print', array_merge(['inventory' => $item->id], $printQuery)) }}" target="_blank" rel="noopener" aria-label="Print Stock Card"><x-icon name="printer" size="17" /> Print</a>
+                <button class="button secondary small" type="button" data-stock-export-open><x-icon name="download" size="17" /> Generate</button>
+            </div>
         @endif
     </div>
     @if($card['warning'])<p class="sao-stock-card-warning" role="alert">{{ $card['warning'] }}</p>@endif
@@ -16,7 +20,6 @@
             <label>Filter<select name="stock_movement" aria-label="Filter"><option value="ALL" @selected($card['movement'] === 'ALL')>All Entries</option><option value="RECEIPT" @selected($card['movement'] === 'RECEIPT')>Received Items</option><option value="ISSUE" @selected($card['movement'] === 'ISSUE')>Issued Items</option></select></label>
         </div>
         <div class="table-wrap sao-stock-card-table-wrap">
-            @include('inventory.partials.stock-card-identity')
             @include('inventory.partials.stock-card-table', ['rows' => $card['page']])
         </div>
         <div class="sao-stock-card-footer">
@@ -38,6 +41,10 @@
         </div>
     </form>
 </article>
+@if($canExportStockCard)
+    @include('inventory.partials.stock-card-export-options')
+    @include('inventory.partials.stock-card-export-options-script')
+@endif
 <script>
 document.addEventListener('DOMContentLoaded', () => {
     const form = document.getElementById('sao-stock-card-filters');

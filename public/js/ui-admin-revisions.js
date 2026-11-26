@@ -277,29 +277,6 @@
     function initialize() {
         document.querySelectorAll('[data-closure-date-picker]').forEach(field => enhanceField(field, openDatePicker, '▦'));
         document.querySelectorAll('[data-operational-time-picker]').forEach(field => enhanceField(field, openTimePicker, '◷'));
-        const dialog = document.querySelector('[data-inventory-summary-dialog]');
-        if (dialog) {
-            const content = dialog.querySelector('[data-inventory-summary-content]');
-            document.querySelectorAll('[data-inventory-summary]').forEach(trigger => {
-                const open = () => {
-                    const template = document.querySelector(`[data-inventory-summary-template="${trigger.dataset.inventorySummary}"]`);
-                    if (!template) return;
-                    trigger.focus();
-                    content.replaceChildren(template.content.cloneNode(true));
-                    dialog.showModal();
-                };
-                trigger.addEventListener('click', open);
-                trigger.addEventListener('keydown', event => {
-                    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); open(); }
-                });
-            });
-            dialog.addEventListener('click', event => {
-                if (event.target.closest('[data-summary-close]')) dialog.close();
-                if (event.target.closest('[data-summary-stock-card]')) {
-                    dialog.close(); document.querySelector('[data-inventory-tab="stock-card"]')?.click();
-                }
-            });
-        }
         document.querySelectorAll('table').forEach(table => {
             if (table.closest('.reporting-workspace, .sao-stock-card, .borrowing-calendar') || table.classList.contains('sao-stock-card-table')) return;
             const headers = Array.from(table.querySelectorAll('thead th'));

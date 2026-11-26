@@ -8,10 +8,10 @@
         <tr>
             <th scope="col">Date</th>
             <th scope="col">Reference</th>
-            <th scope="col">Receipt Qty.</th>
-            <th scope="col">Issue Qty.</th>
+            <th scope="col">In</th>
+            <th scope="col">Out</th>
             <th scope="col">Issued Office</th>
-            <th scope="col">Balance Qty.</th>
+            <th scope="col" title="Consolidated balance including subsequent returns; not the historical stock on the release date.">Balance Qty.</th>
         </tr>
     </thead>
     <tbody>

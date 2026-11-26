@@ -17,6 +17,8 @@ use App\Models\UnitOfMeasure;
 use App\Services\AuditService;
 use App\Services\InventoryService;
 use App\Services\InventoryStockCardService;
+use App\Services\InventoryStockCardExportService;
+use Illuminate\Http\Response;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -988,16 +990,43 @@ class InventoryController extends Controller
         ];
     }
 
-    public function printStockCard(Request $request, InventoryItem $inventory, InventoryService $service): View
+    public function printStockCard(Request $request, InventoryItem $inventory, InventoryService $service, InventoryStockCardExportService $exports): View
     {
-        abort_unless($request->user()->access_classification === AccessClassification::SpmuOfficer, 403);
+        $this->authorizeStockCardExport($request);
         $inventory->loadMissing(['unit', 'category']);
         $balance = $service->availability($inventory, now(), now()->addSecond());
 
         return view('inventory.stock-card-print', [
             'item' => $inventory,
             'card' => $this->stockCardData($request, $inventory, $balance),
+            'options' => $exports->options($request, 'print'),
+            'pdfMode' => false,
         ]);
+    }
+
+    public function exportStockCard(Request $request, InventoryItem $inventory, InventoryService $service, InventoryStockCardExportService $exports): Response|RedirectResponse
+    {
+        $this->authorizeStockCardExport($request);
+        $options = $exports->options($request);
+        if ($options->format === 'print') {
+            return redirect()->route('inventory.stock-card.print', array_merge($request->query(), ['inventory' => $inventory->id]));
+        }
+        $inventory->loadMissing(['unit', 'category']);
+        $balance = $service->availability($inventory, now(), now()->addSecond());
+        $card = $this->stockCardData($request, $inventory, $balance);
+        $contents = $exports->render($inventory, $card, $options);
+        app(AuditService::class)->record('INVENTORY_STOCK_CARD_EXPORTED', $inventory, reason: $card['rows']->count().' matching entries · '.strtoupper($options->format));
+
+        return response($contents, 200, [
+            'Content-Type' => $exports->mimeType($options->format),
+            'Content-Disposition' => 'attachment; filename="'.$exports->filename($inventory, $options->format).'"',
+            'Cache-Control' => 'private, no-store',
+        ]);
+    }
+
+    private function authorizeStockCardExport(Request $request): void
+    {
+        abort_unless(in_array($request->user()?->access_classification, [AccessClassification::SpmuHead, AccessClassification::SpmuOfficer], true), 403);
     }
 
     private function stockCardData(Request $request, InventoryItem $item, array $balance): array
@@ -1012,11 +1041,16 @@ class InventoryController extends Controller
         $search = trim((string) ($filters['stock_q'] ?? ''));
         $movement = $filters['stock_movement'] ?? 'ALL';
         $rows = $card['rows']->filter(function (array $row) use ($search, $movement): bool {
-            $text = implode(' ', [$row['reference'], $row['office'], $row['remarks'],
-                $row['date'] ? Carbon::parse($row['date'])->format('m-d-Y d M Y') : '']);
+            $text = implode(' ', array_merge([$row['reference'], $row['office'], $row['remarks'],
+                $row['date'] ? Carbon::parse($row['date'])->format('m-d-Y d M Y') : ''], $row['search_aliases'] ?? []));
 
-            return ($movement === 'ALL' || $row['kind'] === $movement)
-                && ($search === '' || mb_stripos($text, $search) !== false);
+            $matchesMovement = match ($movement) {
+                'RECEIPT' => $row['receipt'] !== null,
+                'ISSUE' => $row['issue'] !== null,
+                default => true,
+            };
+
+            return $matchesMovement && ($search === '' || mb_stripos($text, $search) !== false);
         })->values();
         $perPage = (int) ($filters['stock_per_page'] ?? 7);
         $page = min((int) ($filters['stock_page'] ?? 1), max(1, (int) ceil($rows->count() / $perPage)));

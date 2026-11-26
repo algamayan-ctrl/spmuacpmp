@@ -4,14 +4,6 @@
 .app-main .table-wrap td,.app-main .report-system-table td{padding-block:9px}
 .calendar-closure-reason{margin:2px 0 6px;color:var(--text-muted);font-size:11px;line-height:1.35;overflow-wrap:anywhere}
 .calendar-day.calendar-operational-closed{background:#f1f3f5!important}
-.inventory-admin-summary-item[role=button]{cursor:pointer;text-align:left}
-.inventory-admin-summary-item[role=button]:hover{border-color:var(--interactive)}
-.inventory-admin-summary-item[role=button]:focus-visible{outline:2px solid var(--interactive);outline-offset:3px}
-.inventory-summary-dialog{width:min(680px,calc(100vw - 24px));max-height:85dvh;padding:16px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface-elevated);color:var(--text-primary)}
-.inventory-summary-dialog::backdrop{background:rgba(0,0,0,.5)}
-.inventory-summary-dialog-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;border-bottom:1px solid var(--border);padding-bottom:12px;margin-bottom:12px}
-.inventory-summary-dialog h2{font-size:20px;margin:0}.inventory-summary-dialog-quantity{font-size:24px;font-weight:700;margin:8px 0 12px}
-.inventory-summary-source{padding:12px 0;border-top:1px solid var(--border)}.inventory-summary-source p{margin:4px 0}
 .spmu-field-shell{position:relative;display:block;min-width:0;width:100%}
 .spmu-field-shell input{width:100%;padding-right:38px!important}.spmu-enhanced-field::-webkit-calendar-picker-indicator{opacity:0}
 .spmu-field-trigger{position:absolute;right:3px;top:50%;transform:translateY(-50%);width:32px;min-height:32px;padding:0;border:0;background:transparent;color:var(--text-muted);font-size:20px;cursor:pointer;line-height:1}
@@ -62,7 +54,7 @@ html[data-theme=dark] .calendar-event.calendar-phase-pickup{background:#17324d;c
 html[data-theme=dark] .calendar-event.calendar-phase-return{background:#3c321b;color:#fff0bb;border-color:#75602c}
 html[data-theme=dark] .calendar-event.calendar-phase-attention{background:#40242a;color:#ffe3e6;border-color:#7d424e}
 html[data-theme=dark] .calendar-event.calendar-phase-returned{background:#18382a;color:#d2f5e3;border-color:#35624c}
-html[data-theme=dark] :is(.spmu-field-popup,.inventory-summary-dialog){color-scheme:dark}
+html[data-theme=dark] .spmu-field-popup{color-scheme:dark}
 html[data-theme=dark] .spmu-date-cell.is-closed{background:#343f4e}html[data-theme=dark] .spmu-date-day:disabled{color:#b0bac8}
 html[data-theme=dark] .summary-report-page .report-system-table td:last-child{color:var(--text-primary)!important;background:transparent!important}
 @media(max-width:640px){
@@ -70,6 +62,6 @@ html[data-theme=dark] .summary-report-page .report-system-table td:last-child{co
     .ui-mobile-records tbody tr:not([hidden]){display:block;margin:0 0 8px;padding:8px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface-elevated)}
     .ui-mobile-records tbody tr[hidden]{display:none!important}.ui-mobile-records td{display:flex!important;align-items:flex-start;justify-content:space-between;gap:12px;width:auto!important;border:0!important;white-space:normal!important;padding:6px!important}
     .ui-mobile-records td::before{content:attr(data-label);font-size:11px;font-weight:650;color:var(--text-muted);flex:0 0 34%}.ui-mobile-records td[colspan]::before{display:none}
-    .inventory-summary-dialog{padding:12px}.spmu-field-popup{font-size:13px}.spmu-date-day{min-height:38px}
+    .spmu-field-popup{font-size:13px}.spmu-date-day{min-height:38px}
 }
-@media print{.spmu-field-popup,.spmu-field-trigger,.inventory-summary-dialog{display:none!important}}
+@media print{.spmu-field-popup,.spmu-field-trigger{display:none!important}}

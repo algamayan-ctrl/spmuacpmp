@@ -6,6 +6,7 @@ use App\Models\CustodyTransaction;
 use App\Models\Incident;
 use App\Models\InventoryItem;
 use App\Models\ReturnTransaction;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -38,7 +39,9 @@ class InventoryStockCardService
             || ($hasOpeningEntry && abs($inferredOpening) > 0.0001);
         $running = $opening;
         $rows = collect();
+        $custodyRows = [];
 
+        // Reconcile the original chronological ledger before consolidating its display.
         foreach ($movements as $entry) {
             $direction = $this->direction($entry);
             $quantity = (float) $entry->quantity;
@@ -50,16 +53,67 @@ class InventoryStockCardService
                 $unverified = true;
             }
             $source = $sources->get($entry->source_type.':'.$entry->source_id);
-            $rows->push([
+            $remarks = $this->remarks($entry);
+            $row = [
                 'date' => $entry->occurred_at,
                 'reference' => $source['reference'] ?? 'Stock entry #'.$entry->transaction_id,
                 'office' => $source['office'] ?? 'SPMU',
                 'receipt' => $direction > 0 ? $quantity : null,
                 'issue' => $direction < 0 ? $quantity : null,
-                'balance' => $running,
-                'remarks' => $this->remarks($entry),
+                'balance' => null,
+                'remarks' => $remarks,
                 'kind' => $direction > 0 ? 'RECEIPT' : 'ISSUE',
-            ]);
+                'search_aliases' => [],
+            ];
+
+            // The query is already scoped to one inventory item. Only genuine
+            // release/return movements with a resolved custody ID can be merged.
+            // Unlinked legacy movements and other stock adjustments stay separate.
+            $custodyId = $source['custody_id'] ?? null;
+            $isRelease = $custodyId !== null
+                && $entry->transaction_type === 'PHYSICAL_RELEASE'
+                && $entry->source_type === CustodyTransaction::class
+                && $direction < 0 && $entry->to_state === 'BORROWED';
+            $isReturn = $custodyId !== null
+                && $entry->transaction_type === 'PHYSICAL_RETURN'
+                && $entry->source_type === ReturnTransaction::class
+                && $direction > 0 && $entry->from_state === 'BORROWED';
+
+            if (($isRelease || $isReturn) && isset($custodyRows[$custodyId])) {
+                $index = $custodyRows[$custodyId];
+                $group = $rows->get($index);
+                $field = $isRelease ? 'issue' : 'receipt';
+                $group[$field] = round((float) $group[$field] + $quantity, 3);
+                $group['kind'] = $group['receipt'] !== null ? 'BOTH' : 'ISSUE';
+                $group['remarks'] = implode(' · ', array_unique([...explode(' · ', $group['remarks']), $remarks]));
+                $group['search_aliases'][] = $row['reference'];
+                $group['search_aliases'][] = $row['office'];
+                $group['search_aliases'][] = $row['date'] ? Carbon::parse($row['date'])->format('m-d-Y d M Y') : '';
+                $rows->put($index, $group);
+                continue;
+            }
+
+            if ($isRelease) {
+                $custodyRows[$custodyId] = $rows->count();
+            }
+            $rows->push($row);
+        }
+
+        // A consolidated row is positioned at its first physical release.
+        // Its IN includes subsequent returns, so this balance is a cumulative
+        // net balance of displayed groups, not a historical balance on that date.
+        $running = $opening;
+        $rows = $rows->map(function (array $row) use (&$running, &$unverified): array {
+            $running = round($running + (float) $row['receipt'] - (float) $row['issue'], 3);
+            if ($running < -0.0001 || ($row['kind'] === 'BOTH' && $row['receipt'] > $row['issue'] + 0.0001)) {
+                $unverified = true;
+            }
+            $row['balance'] = $running;
+
+            return $row;
+        });
+        if (abs($running - $current) > 0.0001) {
+            $unverified = true;
         }
 
         if ($unverified) {
@@ -70,7 +124,7 @@ class InventoryStockCardService
             'rows' => $rows,
             'current_balance' => $unverified ? null : $current,
             'warning' => $unverified ? 'The stock balance needs SPMU review because the retained movements do not reconcile with the current inventory record.' : null,
-            'balance_note' => 'Balance includes allocated stock and returned items under laundry or repair. Items still with borrowers or recorded as lost, stolen, or destroyed are excluded.',
+            'balance_note' => 'Balances are consolidated by custody transaction, including subsequent returns, and do not represent historical stock on the release date. Balance includes allocated stock and returned items under laundry or repair. Items still with borrowers or recorded as lost, stolen, or destroyed are excluded.',
         ];
     }
 
@@ -96,6 +150,7 @@ class InventoryStockCardService
                 $custody = $type === CustodyTransaction::class ? $record : $record->custody;
                 $sources->put($type.':'.$record->id, [
                     'reference' => $record->custody_no ?? $record->return_no ?? $record->incident_no,
+                    'custody_id' => $custody?->id,
                     'office' => $custody?->request?->accountableUnit?->unit_name
                         ?: $custody?->requestVersion?->office_unit
                         ?: $custody?->borrower?->organizationalUnit?->unit_name

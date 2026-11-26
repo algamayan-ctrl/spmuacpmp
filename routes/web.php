@@ -193,6 +193,10 @@ Route::middleware(['auth', 'active', 'verified-email', 'approved-registration', 
         Route::get('/inventory/{inventory}/stock-card/print', [InventoryController::class, 'printStockCard'])
             ->whereNumber('inventory')
             ->name('inventory.stock-card.print');
+
+        Route::get('/inventory/{inventory}/stock-card/export', [InventoryController::class, 'exportStockCard'])
+            ->whereNumber('inventory')
+            ->name('inventory.stock-card.export');
     });
 
     // This is the route group for authorized SPMU inventory management.

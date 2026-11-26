@@ -175,35 +175,35 @@
         </div>
     @else
         <section class="inventory-admin-summary" aria-label="Current inventory summary">
-            <div class="inventory-admin-summary-item is-total" role="button" tabindex="0" aria-haspopup="dialog" data-inventory-summary="total" title="Recorded physical quantity for this inventory item.">
+            <div class="inventory-admin-summary-item is-total" title="Recorded physical quantity for this inventory item.">
                 <span class="inventory-summary-icon" aria-hidden="true"><x-icon name="box" size="18" /></span>
                 <div class="inventory-summary-copy">
                     <span>Total Stock</span>
                     <strong>{{ $total + 0 }}</strong>
                 </div>
             </div>
-            <div class="inventory-admin-summary-item is-available" role="button" tabindex="0" aria-haspopup="dialog" data-inventory-summary="available" title="Serviceable units currently free for a new allocation; approved reservations are already excluded.">
+            <div class="inventory-admin-summary-item is-available" title="Serviceable units currently free for a new allocation; approved reservations are already excluded.">
                 <span class="inventory-summary-icon" aria-hidden="true"><x-icon name="success" size="18" /></span>
                 <div class="inventory-summary-copy">
                     <span>Available</span>
                     <strong>{{ $available + 0 }}</strong>
                 </div>
             </div>
-            <div class="inventory-admin-summary-item is-reserved" role="button" tabindex="0" aria-haspopup="dialog" data-inventory-summary="reserved" title="Units allocated to approved requests and awaiting physical release.">
+            <div class="inventory-admin-summary-item is-reserved" title="Units allocated to approved requests and awaiting physical release.">
                 <span class="inventory-summary-icon" aria-hidden="true"><x-icon name="bookmark" size="18" /></span>
                 <div class="inventory-summary-copy">
                     <span>Reserved</span>
                     <strong>{{ $reserved + 0 }}</strong>
                 </div>
             </div>
-            <div class="inventory-admin-summary-item is-custody" role="button" tabindex="0" aria-haspopup="dialog" data-inventory-summary="custody" title="Units physically released to borrowers and not yet returned.">
+            <div class="inventory-admin-summary-item is-custody" title="Units physically released to borrowers and not yet returned.">
                 <span class="inventory-summary-icon" aria-hidden="true"><x-icon name="profile" size="18" /></span>
                 <div class="inventory-summary-copy">
                     <span>On Custody</span>
                     <strong>{{ $issued + 0 }}</strong>
                 </div>
             </div>
-            <div class="inventory-admin-summary-item is-unavailable" role="button" tabindex="0" aria-haspopup="dialog" data-inventory-summary="unavailable" title="Units excluded from allocation by laundry, incident, or physical-condition state.">
+            <div class="inventory-admin-summary-item is-unavailable" title="Units excluded from allocation by laundry, incident, or physical-condition state.">
                 <span class="inventory-summary-icon" aria-hidden="true"><x-icon name="warning" size="18" /></span>
                 <div class="inventory-summary-copy">
                     <span>Unavailable</span>
@@ -834,7 +834,6 @@
             </dl>
         </article>
         </section>
-        @include('inventory.partials.summary-dialog')
     @endif
 </section>
 
@@ -847,6 +846,7 @@
 }
 
 .inventory-admin-summary-item {
+    text-align: left;
     --inventory-summary-accent: var(--border-strong);
     display: flex;
     align-items: center;
@@ -1607,6 +1607,34 @@
 .inventory-adjustment-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
 .inventory-adjustment-form small:not(.field-error) { color: var(--text-muted); font-weight: 500; line-height: 1.45; }
 
+/* Keep the unselected adjustment controls on one row whenever space permits. */
+@media (min-width: 701px) {
+    .inventory-adjustment-form.is-action-only {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-end;
+    }
+    .inventory-adjustment-form.is-action-only > label:first-of-type {
+        flex: 1 1 240px;
+        min-width: 0;
+        align-self: auto;
+    }
+    .inventory-adjustment-form.is-action-only .inventory-adjustment-actions {
+        flex: 0 1 auto;
+        max-width: 100%;
+        margin-left: auto;
+        gap: 16px;
+    }
+    .inventory-adjustment-form.is-action-only .inventory-adjustment-actions .button {
+        width: auto;
+        height: 48px;
+    }
+}
+
+@media (max-width: 700px) {
+    .inventory-adjustment-form.is-action-only { grid-template-columns: minmax(0, 1fr); }
+}
+
 @media print {
     .sidebar,
     .topbar,
@@ -1746,6 +1774,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const syncFields = () => {
         const selected = action?.value || '';
+        form.classList.toggle('is-action-only', !selected && !form.querySelector('.field-error'));
         const needsIncident = incidentActions.has(selected);
         const needsQuantity = quantityOnlyActions.has(selected) || needsIncident;
         const reason = reasonConfig[selected] || null;

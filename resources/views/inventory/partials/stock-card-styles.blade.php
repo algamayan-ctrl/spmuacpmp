@@ -38,4 +38,29 @@
     .sao-stock-card-heading { align-items: flex-start; flex-direction: column; }
     .sao-stock-card-filters { grid-template-columns: minmax(0, 1fr); }
 }
+/* Stock Card export controls only. */
+.sao-stock-card-actions { display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
+.sao-stock-card-actions .sao-stock-card-print-action { color:var(--info, #1767a6); border-color:#83b5dc; background:#f0f6fc; }
+.stock-export-dialog { width:min(620px, calc(100vw - 32px)); max-height:calc(100vh - 32px); padding:0; border:1px solid var(--border); border-radius:16px; background:var(--surface-elevated, #fff); color:var(--text); box-shadow:var(--shadow); overflow:auto; }
+.stock-export-dialog::backdrop { background:rgba(7,27,53,.42); }
+.stock-export-dialog form { margin:0; padding:0 28px; }
+.stock-export-header { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; padding:22px 0 18px; border-bottom:1px solid var(--border); }
+.stock-export-header h2 { margin:0 0 7px; font-size:20px; font-weight:750; color:var(--heading); }
+.stock-export-header p { margin:0; font-size:13px; color:var(--text-secondary); overflow-wrap:anywhere; }
+.stock-export-body { padding:16px 0 0; }
+.stock-export-body h3 { font-size:15px; margin:0 0 15px; color:var(--heading); }
+.stock-export-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }
+.stock-export-dialog label { display:grid; gap:7px; margin:0; font-size:12px; font-weight:700; color:var(--heading); }
+.stock-export-dialog select,.stock-export-dialog input { min-width:0; width:100%; min-height:38px; font-size:13px; margin:0; }
+.stock-export-note { display:flex; align-items:center; gap:9px; font-size:13px; padding:16px 0; margin:0; }
+.stock-export-note .ui-icon { color:var(--info,#1767a6); flex-shrink:0; }
+.stock-export-advanced { border-top:1px solid var(--border); }
+.stock-export-advanced summary { display:flex; align-items:center; gap:10px; cursor:pointer; padding:14px 5px; font-weight:700; font-size:14px; list-style:none; }
+.stock-export-advanced summary::after { content:'⌄'; margin-left:auto; }
+.stock-export-advanced[open] summary::after { content:'⌃'; }
+.stock-export-advanced-grid,.stock-export-custom { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; padding:0 0 14px; }
+.stock-export-custom { grid-column:1/-1; }
+.stock-export-dialog [hidden] { display:none!important; }
+.stock-export-footer { display:flex; justify-content:flex-end; gap:12px; padding:24px 0; border-top:1px solid var(--border); }
+@media(max-width:560px) { .stock-export-dialog form { padding:0 16px; } .stock-export-grid,.stock-export-advanced-grid { grid-template-columns:1fr; } }
 </style>
