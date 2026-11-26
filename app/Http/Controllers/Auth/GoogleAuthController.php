@@ -14,11 +14,8 @@ use App\Services\GoogleRegistrationContext;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Laravel\Socialite\Facades\Socialite;
-use Illuminate\Validation\ValidationException;
 use Throwable;
 
 /**
@@ -37,7 +34,7 @@ class GoogleAuthController extends Controller
      */
     public function redirect(Request $request): RedirectResponse
     {
-        $request->session()->forget('google_registration');
+        $request->session()->forget(['google_registration', 'google_link']);
         if (! $this->isConfigured()) {
             return redirect()->route('home')->withErrors([
                 'google' => 'Google sign-in is not configured on this server. Use your email and password.',
@@ -89,26 +86,22 @@ class GoogleAuthController extends Controller
         }
     }
 
-    public function link(Request $request): RedirectResponse
-    {
-        $request->validate(['password' => ['required', 'string']]);
-        if (! Hash::check($request->string('password')->toString(), $request->user()->password)) {
-            throw ValidationException::withMessages(['password' => 'Enter your current password to link Google.']);
-        }
-        if ($this->isExternalBorrower($request->user())) {
-            return redirect()->route('profile.show')->withErrors(['google' => self::EXTERNAL_MESSAGE]);
-        }
-        $request->session()->put('google_link', ['user_id' => $request->user()->id, 'expires_at' => now()->addMinutes(10)->timestamp]);
-
-        return $this->redirect($request);
-    }
-
     /**
      * Handle Google's callback and sign in the matching local account.
      */
     public function callback(Request $request): RedirectResponse
     {
         $request->session()->forget('google_registration');
+        // Invalidate any in-flight linking session from before this revision.
+        $legacyLink = $request->session()->pull('google_link');
+        if ($legacyLink !== null || $request->user() !== null) {
+            $request->session()->forget('state');
+            $target = $request->user() !== null ? 'profile.show' : 'home';
+
+            return redirect()->route($target)->withErrors([
+                'google' => 'Google account linking is no longer available. Sign out before using Continue with Google.',
+            ]);
+        }
         if (! $this->isConfigured()) {
             return redirect()->route('home')->withErrors([
                 'google' => 'Google sign-in is not configured on this server. Use your email and password.',
@@ -149,45 +142,11 @@ class GoogleAuthController extends Controller
             ]);
         }
 
-        /* A CSPC student address never registers, links or signs in through Google. */
+        /* A CSPC student address never registers or signs in through Google. */
         if (app(EmailVerificationService::class)->isStudentEmail($email)) {
-            $request->session()->forget('google_link');
-            $target = $request->user() !== null ? 'profile.show' : 'home';
-
-            return redirect()->route($target)->withErrors([
+            return redirect()->route('home')->withErrors([
                 'google' => 'Continue with Google is not available for CSPC student email addresses.',
             ]);
-        }
-
-        $link = $request->session()->pull('google_link');
-        if ($link !== null || $request->user() !== null) {
-            $user = $request->user();
-            if (! is_array($link) || ! $user || (int) ($link['user_id'] ?? 0) !== $user->id
-                || (int) ($link['expires_at'] ?? 0) < now()->timestamp
-                || $user->account_status !== AccountStatus::Active || ! $user->hasVerifiedInstitutionalEmail()
-                || ! $user->hasApprovedRegistration() || strtolower($user->email) !== $email) {
-                return redirect()->route('profile.show')->withErrors(['google' => 'Google linking requires your active, verified account and its matching email. Sign in and try again.']);
-            }
-            if ($this->isExternalBorrower($user)) {
-                return redirect()->route('profile.show')->withErrors(['google' => self::EXTERNAL_MESSAGE]);
-            }
-            try {
-                DB::transaction(function () use ($user, $googleUser): void {
-                    $identity = OauthIdentity::query()->where('provider', 'google')->where('subject', $googleUser->getId())->first();
-                    $existing = OauthIdentity::query()->where('user_id', $user->id)->where('provider', 'google')->first();
-                    if (($identity && $identity->user_id !== $user->id) || ($existing && $existing->subject !== $googleUser->getId())) {
-                        throw ValidationException::withMessages(['google' => 'This Google identity is already linked. No account was changed.']);
-                    }
-                    if (! $identity) {
-                        OauthIdentity::query()->create(['user_id' => $user->id, 'provider' => 'google', 'subject' => $googleUser->getId()]);
-                        app(AuditService::class)->record('GOOGLE_ACCOUNT_LINKED', $user, after: ['provider' => 'google']);
-                    }
-                });
-            } catch (\Illuminate\Database\UniqueConstraintViolationException) {
-                throw ValidationException::withMessages(['google' => 'This Google identity was already linked. No account was changed.']);
-            }
-
-            return redirect()->route('profile.show')->with('success', 'Google sign-in linked to your account.');
         }
 
         // A CSPC Google identity alone never proves employee borrowing eligibility.
@@ -209,7 +168,7 @@ class GoogleAuthController extends Controller
                 return redirect()->route('register', ['source' => 'google']);
             }
             return redirect()->route('home')->withErrors([
-                'google' => 'This Google account is not registered or linked in SPMU-ACPMP. Sign in with your email and password, then link Google in Account Settings. New Borrowers must register and await SAO approval.',
+                'google' => 'This Google account is not registered or linked in SPMU-ACPMP. Existing accounts without a Google identity must sign in with email and password. New eligible CSPC Employees may register through Google and await SAO approval.',
             ]);
         }
 

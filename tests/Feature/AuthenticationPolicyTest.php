@@ -72,7 +72,7 @@ class AuthenticationPolicyTest extends TestCase
         $this->assertAuthenticatedAs($employee);
     }
 
-    public function test_an_unlinked_existing_employee_must_link_google_first(): void
+    public function test_an_unlinked_existing_employee_must_use_local_password(): void
     {
         $this->borrower('unlinked.employee@cspc.edu.ph');
         $this->fakeGoogle('unlinked.employee@cspc.edu.ph', 'unlinked-subject');
@@ -137,12 +137,11 @@ class AuthenticationPolicyTest extends TestCase
         $external = $this->external('agency.link@gmail.com', 'APPROVED');
 
         $this->actingAs($external)->withSession(['active_workspace' => 'BORROWER'])
-            ->post(route('auth.google.link'), ['password' => self::PASSWORD])
-            ->assertRedirect(route('profile.show'))->assertSessionHasErrors('google');
+            ->post('/profile/google/link', ['password' => self::PASSWORD])
+            ->assertNotFound();
         $this->assertNull(session('google_link'));
 
         /* A callback reached with a forged link session is refused as well. */
-        $this->fakeGoogle('agency.link@gmail.com', 'agency-subject');
         $this->actingAs($external)->withSession(['active_workspace' => 'BORROWER', 'google_link' => ['user_id' => $external->id, 'expires_at' => now()->addMinutes(5)->timestamp]])
             ->get(route('auth.google.callback'))->assertRedirect(route('profile.show'))->assertSessionHasErrors('google');
         $this->assertDatabaseCount('oauth_identities', 0);
@@ -206,7 +205,6 @@ class AuthenticationPolicyTest extends TestCase
 
         /* Linking from Account Settings is refused at the callback. */
         $unlinked = $this->borrower('second.student@my.cspc.edu.ph');
-        $this->fakeGoogle($unlinked->email, 'second-student-subject');
         $this->actingAs($unlinked)->withSession(['active_workspace' => 'BORROWER', 'google_link' => ['user_id' => $unlinked->id, 'expires_at' => now()->addMinutes(5)->timestamp]])
             ->get(route('auth.google.callback'))->assertRedirect(route('profile.show'))->assertSessionHasErrors('google');
         $this->assertDatabaseMissing('oauth_identities', ['user_id' => $unlinked->id]);

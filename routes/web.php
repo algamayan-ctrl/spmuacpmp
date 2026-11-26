@@ -93,14 +93,11 @@ Route::middleware('guest')->group(function (): void {
 
 });
 
-// Login and linking share the stateful callback; linking requires a password-
-// confirmed, expiring session created by the authenticated POST route below.
+// Stateful Google login and eligible borrower registration callback.
 Route::get('/auth/google/callback', [GoogleAuthController::class, 'callback'])
     ->middleware('throttle:10,1')->name('auth.google.callback');
 
 Route::middleware(['auth', 'active', 'verified-email', 'approved-registration', 'idle'])->group(function (): void {
-    Route::post('/profile/google/link', [GoogleAuthController::class, 'link'])
-        ->middleware('throttle:5,1')->name('auth.google.link');
     Route::middleware('workspace:SPMU')->group(function (): void {
         Route::get('/registrations', [BorrowerRegistrationReviewController::class, 'index'])->name('registrations.index');
         Route::get('/registrations/{registration}', [BorrowerRegistrationReviewController::class, 'show'])->name('registrations.show');

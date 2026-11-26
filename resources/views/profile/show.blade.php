@@ -739,19 +739,6 @@
     </section>
 </div>
 
-@if(filled(config('services.google.client_id')) && filled(config('services.google.client_secret')) && filled(config('services.google.redirect')))
-<section class="card top-gap" aria-labelledby="google-account-link-title">
-    <h2 id="google-account-link-title">Google sign-in</h2>
-    <p>Link the Google account with your registered email. Your system role and SAO approval still control access.</p>
-    <form method="post" action="{{ route('auth.google.link') }}" class="form-grid">
-        @csrf
-        <label>Current Password<input type="password" name="password" required autocomplete="current-password"></label>
-        @error('google')<p role="alert">{{ $message }}</p>@enderror
-        <button class="button secondary ui-pressable" type="submit">Link Google Account</button>
-    </form>
-</section>
-@endif
-
 <script>
 document.addEventListener('DOMContentLoaded', () => {
     const input = document.querySelector('[data-profile-photo-input]');

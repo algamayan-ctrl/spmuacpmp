@@ -19,6 +19,8 @@ class AccountSettingsRoleTest extends TestCase
     {
         parent::setUp();
         $this->seed(DatabaseSeeder::class);
+        config(['services.google.client_id' => 'test-client', 'services.google.client_secret' => 'test-secret',
+            'services.google.redirect' => 'http://localhost/auth/google/callback']);
     }
 
     public function test_shared_account_menu_and_settings_render_for_every_normal_classification(): void
@@ -56,7 +58,9 @@ class AccountSettingsRoleTest extends TestCase
                 ->assertSee('Account Settings')
                 ->assertSee('Profile Information')
                 ->assertSee('Borrower / Employee Number')
-                ->assertSee('E-signature');
+                ->assertSee('E-signature')
+                ->assertDontSee('Link Google Account')
+                ->assertDontSee('google-account-link-title', false);
         }
     }
 
