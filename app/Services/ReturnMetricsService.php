@@ -20,6 +20,8 @@ class ReturnMetricsService
     public const RETURNED_LATE = 'RETURNED_LATE';
     public const CURRENTLY_OVERDUE = 'CURRENTLY_OVERDUE';
     public const ON_CUSTODY = 'ON_CUSTODY';
+    public const CANCELLED = 'CANCELLED';
+    public const NOT_RELEASED = 'NOT_RELEASED';
 
     public function __construct(private readonly LateReturnService $lateReturns) {}
 
@@ -43,6 +45,22 @@ class ReturnMetricsService
         ];
     }
 
+    /** Return metrics do not apply to cancelled or never-issued custody. */
+    private function nonReturnState(CustodyTransaction $custody): ?string
+    {
+        $requestStatus = $custody->request?->status;
+        $requestStatusValue = $requestStatus instanceof \BackedEnum
+            ? $requestStatus->value
+            : (string) $requestStatus;
+
+        if (strtoupper((string) $custody->status) === 'CANCELLED'
+            || strtoupper($requestStatusValue) === 'CANCELLED') {
+            return self::CANCELLED;
+        }
+
+        return $custody->released_at === null ? self::NOT_RELEASED : null;
+    }
+
     /**
      * Date on which the full custody physically came back.
      *
@@ -53,6 +71,10 @@ class ReturnMetricsService
      */
     public function completionMoment(CustodyTransaction $custody): ?Carbon
     {
+        if ($this->nonReturnState($custody) !== null) {
+            return null;
+        }
+
         $custody->loadMissing(['returns', 'laundryJob', 'lines.requestItem.inventoryItem']);
 
         $quantities = $this->quantities($custody);
@@ -89,7 +111,13 @@ class ReturnMetricsService
             return Carbon::parse($moment);
         }
 
-        return $custody->closed_at ? Carbon::parse($custody->closed_at) : null;
+        // Closure is not a return receipt. Only genuinely closed legacy
+        // transactions without a return event may use this fallback.
+        return (string) $custody->status === 'CLOSED'
+            && ! $hasQuantityLevelReturnEvent
+            && $custody->closed_at
+                ? Carbon::parse($custody->closed_at)
+                : null;
     }
 
     public function completionDate(CustodyTransaction $custody): ?Carbon
@@ -108,6 +136,10 @@ class ReturnMetricsService
      */
     public function state(CustodyTransaction $custody): string
     {
+        if (($nonReturnState = $this->nonReturnState($custody)) !== null) {
+            return $nonReturnState;
+        }
+
         $completion = $this->completionDate($custody);
         $due = $this->expectedReturnDate($custody);
 

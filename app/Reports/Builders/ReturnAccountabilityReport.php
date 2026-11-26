@@ -213,6 +213,7 @@ class ReturnAccountabilityReport implements ReportBuilder
                         ReturnMetricsService::RETURNED_ON_TIME => 'positive',
                         ReturnMetricsService::RETURNED_LATE => 'attention',
                         ReturnMetricsService::CURRENTLY_OVERDUE => 'critical',
+                        ReturnMetricsService::CANCELLED, ReturnMetricsService::NOT_RELEASED => 'neutral',
                         default => 'progress',
                     },
                     '_tone_accountability' => $accountabilityOpen ? 'critical' : 'neutral',
@@ -342,6 +343,8 @@ class ReturnAccountabilityReport implements ReportBuilder
             ReturnMetricsService::RETURNED_LATE => 'Returned late',
             ReturnMetricsService::CURRENTLY_OVERDUE => 'Currently overdue',
             ReturnMetricsService::ON_CUSTODY => 'Still on custody',
+            ReturnMetricsService::CANCELLED => 'Cancelled',
+            ReturnMetricsService::NOT_RELEASED => 'Not released',
             default => str($state)->replace('_', ' ')->title()->toString(),
         };
     }

@@ -257,6 +257,37 @@ class ReportReleaseReturnTest extends TestCase
         $this->assertSame('Returned late', $this->returns()->rows->first()['return_status']);
     }
 
+    public function test_unreleased_and_cancelled_custody_are_not_counted_as_returns(): void
+    {
+        $cancelled = $this->request(
+            'ACADEMIC',
+            'College of Computer Studies',
+            RequestStatus::Cancelled,
+            custody: [
+                'status' => 'CANCELLED',
+                'due_at' => $this->from->copy()->addDays(5),
+                'closed_at' => $this->from->copy()->addDays(9),
+            ]
+        )->custody;
+
+        $unreleased = $this->request(
+            'ACADEMIC',
+            'College of Computer Studies',
+            RequestStatus::ApprovedReadyForRelease,
+            custody: ['status' => 'PREPARING_RELEASE']
+        )->custody;
+
+        $report = $this->returns();
+        $rows = $report->rows->keyBy('custody_no');
+        $this->assertSame('Cancelled', $rows[$cancelled->custody_no]['return_status']);
+        $this->assertSame('', $rows[$cancelled->custody_no]['last_return_at']);
+        $this->assertSame('Not released', $rows[$unreleased->custody_no]['return_status']);
+        $this->assertSame(0, $report->summary['Returned late']);
+        $this->assertSame(0, $report->summary['Still on custody']);
+        $this->assertSame(0, $this->returns(['return_status' => 'RETURNED_LATE'])->count());
+        $this->assertSame(0, $this->returns(['return_status' => 'COMPLETED'])->count());
+    }
+
     public function test_unreturned_items_past_the_due_date_are_reported_currently_overdue(): void
     {
         $item = $this->item('Monoblock Chair', 300);

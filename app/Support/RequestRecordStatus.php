@@ -81,6 +81,11 @@ final class RequestRecordStatus
             }
             $workflow = $custody->workflowStatus();
             $key = $workflow['key'];
+            // A cancelled request is terminal, not a physical return.
+            if ($key === 'CANCELLED') {
+                return $workflow;
+            }
+
             if (in_array($key, self::ACCOUNTABILITY_KEYS, true)) {
                 return in_array($key, self::SLDDP_KEYS, true)
                     ? ['key' => 'SLDDP', 'label' => 'SLDDP', 'group' => 'attention']

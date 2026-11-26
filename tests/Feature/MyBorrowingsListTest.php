@@ -17,6 +17,7 @@ use App\Models\RequestVersion;
 use App\Models\Role;
 use App\Models\UnitOfMeasure;
 use App\Models\User;
+use App\Services\ReturnMetricsService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -428,6 +429,80 @@ class MyBorrowingsListTest extends TestCase
             ->assertSee('>On Custody<', false)
             ->assertDontSee('Items Released / On Custody')
             ->assertDontSee('For Pickup Scheduling');
+    }
+
+    public function test_cancellation_after_due_date_is_not_a_late_return(): void
+    {
+        $borrower = $this->borrower();
+        $due = now()->subDays(2);
+        $cancelled = $this->custody($borrower, [
+            'status' => 'CANCELLED',
+            'released_at' => null,
+            'scheduled_release_at' => now()->subDays(3),
+            'due_at' => $due,
+            'closed_at' => now()->subDay(),
+        ], ['request_status' => RequestStatus::Cancelled]);
+        $cancelled->requestVersion->update([
+            'return_date' => $due->toDateString(),
+            'return_due_at' => $due->copy()->endOfDay(),
+        ]);
+        $cancelled->lines()->update(['actual_released_quantity' => 0]);
+
+        $metrics = app(ReturnMetricsService::class);
+        $this->assertSame(ReturnMetricsService::CANCELLED, $metrics->state($cancelled));
+        $this->assertNull($metrics->completionMoment($cancelled));
+        $this->assertFalse($metrics->completedInPeriod($cancelled, now()->subDays(7), now()));
+        $this->assertSame('CANCELLED', $cancelled->request->borrowerRecordStatus()['key']);
+
+        $this->myBorrowings($borrower)
+            ->assertOk()
+            ->assertSee('data-borrowings-status="CANCELLED"', false)
+            ->assertSee('data-borrowings-group="cancelled"', false)
+            ->assertSeeText('Not released')
+            ->assertDontSee('data-borrowings-status="RETURNED_LATE"', false);
+
+        $this->assertSame([$cancelled->id], $this->ids(
+            $this->myBorrowings($borrower, ['status' => 'CANCELLED'])->assertOk()
+        ));
+        $this->assertSame([], $this->ids(
+            $this->myBorrowings($borrower, ['status' => 'RETURNED_LATE'])->assertOk()
+        ));
+
+        $this->withSession(['active_workspace' => 'BORROWER'])
+            ->actingAs($borrower)
+            ->get(route('custody.show', $cancelled))
+            ->assertOk()
+            ->assertSeeText('Cancelled');
+
+        // A genuine late legacy return must still retain its late badge.
+        $late = $this->custody($borrower, [
+            'status' => 'CLOSED',
+            'due_at' => $due,
+            'closed_at' => now()->subDay(),
+        ], ['returned' => 5]);
+        $this->assertSame(ReturnMetricsService::RETURNED_LATE, $metrics->state($late));
+        $this->assertSame([$late->id], $this->ids(
+            $this->myBorrowings($borrower, ['status' => 'RETURNED_LATE'])->assertOk()
+        ));
+    }
+
+    public function test_unreleased_and_request_level_cancelled_custody_are_not_return_metrics(): void
+    {
+        $borrower = $this->borrower();
+        $metrics = app(ReturnMetricsService::class);
+        $unreleased = $this->pickupSchedulingCustody($borrower);
+        $this->assertSame(ReturnMetricsService::NOT_RELEASED, $metrics->state($unreleased));
+        $this->assertNull($metrics->completionMoment($unreleased));
+
+        // Defend against a stale custody status when its parent was cancelled.
+        $cancelled = $this->custody($borrower, [
+            'status' => 'CLOSED',
+            'due_at' => now()->subDays(2),
+            'closed_at' => now()->subDay(),
+        ], ['request_status' => RequestStatus::Cancelled, 'returned' => 5]);
+        $this->assertSame(ReturnMetricsService::CANCELLED, $metrics->state($cancelled));
+        $this->assertNull($metrics->completionMoment($cancelled));
+        $this->assertSame('CANCELLED', $cancelled->request->borrowerRecordStatus()['key']);
     }
 
     public function test_overdue_and_in_progress_returns_remain_searchable_status_choices(): void
