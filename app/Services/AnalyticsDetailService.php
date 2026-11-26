@@ -100,6 +100,8 @@ class AnalyticsDetailService
  'borrower' => $borrower,
  'record_limit' => $recordLimit ?? self::RECORD_LIMIT,
  'demand_view' => $request->input('section') === 'demand',
+ 'return_records_view' => $recordLimit === PHP_INT_MAX && ($request->input('section') === 'returns'
+ || ($type === 'card' && $request->input('for') === 'overview.return-compliance')),
  ];
 
  if ($type === 'card' && $request->input('for') === 'demand.requested-items'
@@ -114,6 +116,10 @@ class AnalyticsDetailService
  if ($request->input('for') === 'inventory.utilization' && is_string($request->input('item_name')) && is_string($request->input('item_unit'))) {
  $scope['inventory_group'] = ['name' => $request->input('item_name'), 'unit' => $request->input('item_unit')];
  }
+ }
+ // The full-page return resolver loads the complete evidence separately.
+ if ($scope['return_records_view'] && in_array($type, ['returns', 'follow-up', 'overdue-aging', 'late-rate'], true)) {
+ $scope['record_limit'] = self::RECORD_LIMIT;
  }
  $detail = match ($type) {
  'requests' => $this->requests($scope),
@@ -142,6 +148,10 @@ class AnalyticsDetailService
 
  if ($detail === null) {
  return null;
+ }
+
+ if ($scope['return_records_view'] && in_array($type, ['returns', 'follow-up', 'overdue-aging', 'late-rate'], true)) {
+ $detail = (new AnalyticsReturnDetailService($this->analytics))->record($scope, $type, $request, $detail);
  }
 
  if ($type === 'outcomes' && $request->input('section') === 'demand') {
@@ -710,23 +720,6 @@ class AnalyticsDetailService
  */
  private function closedReturns(array $scope, array $returns, bool $late): array
  {
- $query = CustodyTransaction::query()
- ->with(['borrower', 'lines.requestItem.inventoryItem', 'returns', 'laundryJob'])
- ->whereNotNull('released_at')
- ->where(function ($events) use ($scope): void {
- $events->whereBetween('closed_at', [$scope['from'], $scope['to']])
- ->orWhereHas('returns', fn ($rows) => $rows->whereBetween('received_at', [$scope['from'], $scope['to']]))
- ->orWhereHas('laundryJob', fn ($job) => $job->whereBetween('worker_received_at', [$scope['from'], $scope['to']]));
- });
-
- if ($versionIds = $this->analytics->filteredVersionIds($scope['division'], $scope['unit'])) {
- $query->whereIn('request_version_id', $versionIds);
- }
-
- if ($scope['borrower'] !== null) {
- $query->where('borrower_user_id', $scope['borrower']);
- }
-
  $target = $late
  ? ReturnMetricsService::RETURNED_LATE
  : ReturnMetricsService::RETURNED_ON_TIME;
@@ -736,14 +729,11 @@ class AnalyticsDetailService
  $scope['from'], $scope['to'], $scope['division'], $scope['unit'], $scope['borrower']
  );
 
- $rows = $query->get()
- ->filter(fn (CustodyTransaction $custody): bool =>
- $this->returnMetrics->completedInPeriod($custody, $scope['from'], $scope['to'])
- && $this->returnMetrics->state($custody) === $target
- )
- ->sortByDesc(fn (CustodyTransaction $custody) =>
- $this->returnMetrics->completionMoment($custody)?->timestamp ?? 0
- )
+ $rows = $this->analytics->completedReturnDetailRecords(
+ $scope['from'], $scope['to'], $scope['division'], $scope['unit'], $scope['borrower']
+ )->where('state', $target)
+ ->sortByDesc(fn (array $row) => $row['returned_at']?->timestamp ?? 0)
+ ->pluck('custody')
  ->take((int) $scope['record_limit'])
  ->values();
 

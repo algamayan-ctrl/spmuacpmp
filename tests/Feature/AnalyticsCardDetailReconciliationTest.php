@@ -572,6 +572,178 @@ class AnalyticsCardDetailReconciliationTest extends TestCase
         $this->assertEquals(4, array_sum(array_column($details->resolve($scope, 'inventory.coverage')['table']['rows'], 4)));
     }
 
+    public function test_return_evidence_uses_physical_completion_and_excludes_cancelled_and_partial_custody(): void
+    {
+        $item = $this->item('Return evidence fixture', 100);
+        $head = $this->spmuHead();
+        $onTime = $this->returnFixture($item, $head, 2, 2, 3, 'CLOSED');
+        $late = $this->returnFixture($item, $head, 3, 3, 8, 'OBLIGATION_OPEN');
+        $partial = $this->returnFixture($item, $head, 4, 1, 6, 'RETURN_PROCESSING');
+        $this->release($item, 2, $this->from->copy()->addDay());
+        $cancelled = CustodyTransaction::query()->latest('id')->firstOrFail();
+        $cancelled->update(['status' => 'CANCELLED', 'released_at' => null, 'closed_at' => $this->from->copy()->addDays(9)]);
+        $this->release($item, 2, $this->from->copy()->addDay());
+        CustodyTransaction::query()->latest('id')->firstOrFail()->update(['status' => 'CANCELLED', 'closed_at' => $this->from->copy()->addDays(9)]);
+
+        $outcome = $this->returnCard('returns.outcome');
+        $trend = $this->returnCard('returns.trend');
+        $compliance = $this->returnCard('overview.return-compliance');
+        $this->assertCount(2, $outcome['table']['rows']);
+        $this->assertCount(2, $compliance['table']['rows']);
+        $this->assertEquals(2, array_sum(array_column($trend['breakdown_tables'][0]['rows'], 1)));
+        $this->assertEquals(1, array_sum(array_column($trend['breakdown_tables'][0]['rows'], 2)));
+        $this->assertEquals(1, array_sum(array_column($trend['breakdown_tables'][0]['rows'], 3)));
+        $this->assertEqualsCanonicalizing([$onTime->custody_no, $late->custody_no], array_column(array_column($outcome['table']['rows'], 0), 'primary'));
+        $lateDetail = $this->returnRecord('returns', ['state' => 'late']);
+        $this->assertCount(1, $lateDetail['table']['rows']);
+        $this->assertSame($late->custody_no, $lateDetail['table']['rows'][0][0]['primary']);
+        $this->assertSame('Returned Late', $lateDetail['table']['rows'][0][5]);
+        $overdue = $this->returnCard('returns.followup');
+        $this->assertCount(1, $overdue['table']['rows']);
+        $this->assertSame($partial->custody_no, $overdue['table']['rows'][0][0]['primary']);
+        $this->assertEquals(3, $overdue['table']['rows'][0][3]);
+        $this->assertEquals(1, array_sum(array_column($overdue['breakdown_tables'][0]['rows'], 1)));
+    }
+
+    public function test_return_condition_evidence_reconciles_actual_inspection_quantities_including_partial_receipts(): void
+    {
+        $item = $this->item('Inspection evidence fixture');
+        $head = $this->spmuHead();
+        $this->returnFixture($item, $head, 3, 3, 3, 'CLOSED');
+        $this->returnFixture($item, $head, 4, 2, 6, 'RETURN_PROCESSING', 'DAMAGED');
+        $condition = $this->returnCard('returns.condition');
+        $this->assertEquals(5, $condition['value']);
+        $this->assertEquals(5, array_sum(array_column($condition['table']['rows'], 4)));
+        $this->assertEquals(5, array_sum(array_column($condition['breakdown_tables'][0]['rows'], 1)));
+        $this->assertCount(2, $condition['table']['rows']);
+        $this->assertEqualsCanonicalizing(['Fine', 'Damaged'], array_column($condition['table']['rows'], 5));
+        $this->assertEquals(100, array_sum(array_map(fn ($r) => (float) $r[2], $condition['breakdown_tables'][0]['rows'])));
+        $this->assertEquals($this->analytics->returnConditions($this->from, $this->to, null, null)['total'], $condition['value']);
+
+        $this->actingAs($head)->get(route('reports.analytics-records', ['section' => 'returns', 'academic_period' => 'month', 'detail' => 'card', 'for' => 'returns.condition']))
+            ->assertOk()->assertSee('Condition Distribution')->assertSee('Return Inspection Records')->assertSee('Inspected Qty.')
+            ->assertViewHas('detail', fn ($detail) => count($detail['table']['rows']) === 2);
+    }
+
+    public function test_late_rate_evidence_includes_the_denominator_and_unranked_units(): void
+    {
+        $item = $this->item('Late rate fixture');
+        $head = $this->spmuHead();
+        $this->returnFixture($item, $head, 1, 1, 3, 'CLOSED');
+        $this->returnFixture($item, $head, 1, 1, 8, 'CLOSED');
+        $unassigned = $this->returnFixture($item, $head, 1, 1, 9, 'CLOSED');
+        RequestVersion::query()->findOrFail($unassigned->request_version_id)->update(['office_unit' => '']);
+        $detail = $this->returnRecord('late-rate', ['level' => 'unit']);
+        $this->assertCount(3, $detail['table']['rows']);
+        $this->assertEquals(3, array_sum(array_column($detail['breakdown_tables'][0]['rows'], 1)));
+        $this->assertEquals(2, array_sum(array_column($detail['breakdown_tables'][0]['rows'], 3)));
+        $this->assertContains('Unspecified unit (not ranked)', array_column($detail['breakdown_tables'][0]['rows'], 0));
+        $selected = $this->returnRecord('late-rate', ['level' => 'unit', 'for' => 'ACADEMIC', 'segment' => $this->ccs()]);
+        $this->assertCount(2, $selected['table']['rows']);
+        $this->assertEquals(2, $selected['breakdown_tables'][0]['rows'][0][1]);
+        $this->assertEquals('50%', $selected['breakdown_tables'][0]['rows'][0][4]);
+    }
+
+    public function test_return_issue_evidence_keeps_case_counts_separate_from_affected_quantities(): void
+    {
+        $item = $this->item('Incident evidence fixture');
+        $head = $this->spmuHead();
+        $custody = $this->returnFixture($item, $head, 4, 4, 8, 'INCIDENT_OPEN');
+        $line = $custody->lines()->firstOrFail();
+        foreach (['OPEN' => 2, 'RESOLVED' => 1] as $status => $quantity) {
+            $incident = \App\Models\Incident::query()->create([
+                'incident_no' => 'PC-RETURN-'.$status, 'custody_transaction_id' => $custody->id,
+                'borrower_user_id' => $custody->borrower_user_id, 'reported_by_user_id' => $head->id,
+                'incident_type' => 'DAMAGE', 'reported_at' => $this->from->copy()->addDays(8), 'status' => $status,
+            ]);
+            \App\Models\IncidentLine::query()->create([
+                'incident_id' => $incident->id, 'custody_line_id' => $line->id,
+                'quantity' => $quantity, 'observed_condition' => 'DAMAGED', 'disposition_state' => 'RETURNED',
+            ]);
+        }
+        $detail = $this->returnCard('returns.issues');
+        $stats = collect($detail['stats'])->pluck('value', 'label');
+        $this->assertEquals(1, $stats['Open accountability cases']);
+        $this->assertEquals(2, $stats['Incidents recorded']);
+        $this->assertEquals(3, $stats['Incident affected quantity']);
+        $this->assertCount(1, $detail['table']['rows']);
+        $this->assertEquals(2, $detail['table']['rows'][0][5]);
+        $incidentRecords = collect($detail['breakdown_tables'])->firstWhere('title', 'Property Incident Records');
+        $this->assertTrue($incidentRecords['evidence']);
+        $this->assertCount(2, $incidentRecords['rows']);
+        $this->assertEquals(3, array_sum(array_column($incidentRecords['rows'], 4)));
+        $this->actingAs($head)->get(route('reports.analytics-records', ['section' => 'returns', 'academic_period' => 'month', 'detail' => 'card', 'for' => 'returns.issues']))
+            ->assertOk()->assertSee('Open Accountability Records')->assertSee('Property Incident Records');
+    }
+
+    public function test_return_trend_includes_partial_calendar_buckets(): void
+    {
+        $item = $this->item('Partial period fixture');
+        $head = $this->spmuHead();
+        $this->returnFixture($item, $head, 1, 1, 29, 'CLOSED');
+        $this->returnFixture($item, $head, 1, 1, 30, 'CLOSED');
+        $trend = $this->analytics->returnTrend(Carbon::create(2026, 4, 29)->startOfDay(), Carbon::create(2026, 5, 2)->endOfDay(), null, null, 'month');
+        $this->assertSame(2, $trend['total']);
+        $this->assertSame(2, $trend['plotted']);
+        $this->assertContains('Week 1 of May', array_column($trend['points'], 'label'));
+    }
+
+    public function test_current_overdue_aging_includes_unbanded_records_and_preserves_selected_band(): void
+    {
+        $item = $this->item('Overdue evidence fixture');
+        $this->release($item, 2, $this->from->copy()->addDay());
+        $old = CustodyTransaction::query()->latest('id')->firstOrFail();
+        $old->update(['status' => 'OVERDUE']);
+        $this->release($item, 3, $this->from->copy()->addDay());
+        $unbanded = CustodyTransaction::query()->latest('id')->firstOrFail();
+        $unbanded->update(['status' => 'OVERDUE', 'due_at' => now()->endOfDay()]);
+        $detail = $this->returnRecord('overdue-aging', []);
+        $this->assertCount(2, $detail['table']['rows']);
+        $this->assertEquals(2, array_sum(array_column($detail['breakdown_tables'][0]['rows'], 1)));
+        $this->assertContains('Unbanded', array_column($detail['table']['rows'], 5));
+        $this->assertEquals(5, array_sum(array_column($detail['table']['rows'], 3)));
+        $band = $this->analytics->overdueAgingBand($this->analytics->daysOverdue($old));
+        $this->assertNotSame('unbanded', $band);
+        $selected = $this->returnRecord('overdue-aging', ['bucket' => $band]);
+        $this->assertCount(1, $selected['table']['rows']);
+        $this->assertSame($old->custody_no, $selected['table']['rows'][0][0]['primary']);
+    }
+
+    private function returnCard(string $key): array
+    {
+        return $this->details->resolve([
+            'from' => $this->from, 'to' => $this->to, 'division' => null, 'unit' => null,
+            'period' => 'month', 'borrower' => null, 'record_limit' => PHP_INT_MAX, 'return_records_view' => true,
+        ], $key);
+    }
+
+    private function returnRecord(string $type, array $params): array
+    {
+        return app(\App\Services\AnalyticsDetailService::class)->using($this->analytics)->resolve(
+            $type, \Illuminate\Http\Request::create('/', 'GET', ['section' => 'returns'] + $params),
+            $this->from, $this->to, null, null, 'month', null, PHP_INT_MAX
+        );
+    }
+
+    private function returnFixture(InventoryItem $item, User $head, int $released, int $received, int $daysAfterStart, string $status, string $condition = 'FINE'): CustodyTransaction
+    {
+        $this->release($item, $released, $this->from->copy()->addDay());
+        $custody = CustodyTransaction::query()->latest('id')->firstOrFail();
+        $date = $this->from->copy()->addDays($daysAfterStart)->setTime(10, 0);
+        $custody->update(['status' => $status, 'closed_at' => $status === 'CLOSED' ? $date : null]);
+        $line = $custody->lines()->firstOrFail();
+        $line->update(['returned_quantity' => $received]);
+        $return = \App\Models\ReturnTransaction::query()->create([
+            'return_no' => 'RET-TEST-'.$custody->id, 'custody_transaction_id' => $custody->id,
+            'received_by_user_id' => $head->id, 'return_type' => 'NORMAL', 'received_at' => $date, 'status' => 'INSPECTED',
+        ]);
+        \App\Models\ReturnLine::query()->create([
+            'return_transaction_id' => $return->id, 'custody_line_id' => $line->id,
+            'quantity_received' => $received, 'condition_code' => $condition, 'disposition_state' => 'RETURNED',
+        ]);
+        return $custody;
+    }
+
     private function detail(string $key): array
     {
         return $this->details->resolve([

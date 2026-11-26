@@ -449,6 +449,7 @@ class AnalyticsService
  'laundryJob',
  ])
  ->whereNotNull('released_at')
+ ->where('status', '!=', 'CANCELLED')
  ->where(function ($events) use ($from, $to): void {
  $events->whereBetween('closed_at', [$from, $to])
  ->orWhereHas(
@@ -606,7 +607,7 @@ class AnalyticsService
  : null;
 
  $incidents = Incident::query()
- ->with(['borrower', 'custody.request'])
+ ->with(['borrower', 'custody.request', 'lines'])
  ->whereBetween('reported_at', [$from, $to])
  ->whereNotIn('status', ['RESOLVED', 'CLOSED', 'VOID_CORRECTION'])
  ->when($borrower !== null, fn ($query) => $query->where('borrower_user_id', $borrower))
@@ -732,6 +733,10 @@ class AnalyticsService
  foreach ($incidents as $incident) {
  $rows->push([
  'kind' => 'incident',
+ 'borrower_id' => $incident->borrower_user_id,
+ 'custody_id' => $incident->custody?->id,
+ 'affected_quantity' => (float) $incident->lines->sum('quantity') + 0,
+ 'incident_type' => (string) $incident->incident_type,
  'reference' => (string) $incident->incident_no,
  'borrower' => (string) ($incident->borrower?->full_name ?? ''),
  'custody_no' => (string) ($incident->custody?->custody_no ?? ''),
@@ -745,6 +750,10 @@ class AnalyticsService
  foreach ($overdueCases as $overdue) {
  $rows->push([
  'kind' => 'overdue',
+ 'borrower_id' => $overdue->borrower_user_id,
+ 'custody_id' => $overdue->custody?->id,
+ 'affected_quantity' => null,
+ 'incident_type' => null,
  'reference' => (string) ($overdue->custody?->custody_no ?? ''),
  'borrower' => (string) ($overdue->borrower?->full_name ?? ''),
  'custody_no' => (string) ($overdue->custody?->custody_no ?? ''),
@@ -765,6 +774,10 @@ class AnalyticsService
 
  $rows->push([
  'kind' => 'billing',
+ 'borrower_id' => $billing->borrower_user_id,
+ 'custody_id' => $custody?->id,
+ 'affected_quantity' => null,
+ 'incident_type' => null,
  'reference' => (string) $billing->billing_no,
  'borrower' => (string) ($billing->borrower?->full_name ?? ''),
  'custody_no' => (string) ($custody?->custody_no ?? ''),
@@ -778,6 +791,10 @@ class AnalyticsService
  foreach ($tally->standaloneRestrictions() as $restriction) {
  $rows->push([
  'kind' => 'restriction',
+ 'borrower_id' => $restriction->borrower_user_id,
+ 'custody_id' => $restriction->custody?->id,
+ 'affected_quantity' => null,
+ 'incident_type' => null,
  'reference' => 'Restriction #'.$restriction->id,
  'borrower' => (string) ($restriction->borrower?->full_name ?? ''),
  'custody_no' => (string) ($restriction->custody?->custody_no ?? ''),
@@ -2628,16 +2645,11 @@ class AnalyticsService
  *
  * @return array<string, mixed>
  */
- public function incidentSummary(
- CarbonInterface $from,
- CarbonInterface $to,
- ?string $division,
- ?string $unit,
- ?int $borrower = null
- ): array {
+ /** Exact incident population used by incidentSummary(). */
+ private function incidentDetailScope(CarbonInterface $from, CarbonInterface $to, ?string $division, ?string $unit, ?int $borrower = null): Builder
+ {
  $incidentQuery = Incident::query()
- ->whereBetween('reported_at', [$from, $to])
- ->with('lines');
+ ->whereBetween('reported_at', [$from, $to]);
 
  $versionIds = $this->filteredVersionIds($division, $unit);
 
@@ -2650,7 +2662,23 @@ class AnalyticsService
  $incidentQuery->whereIn('custody_transaction_id', $custodyIds);
  }
 
- $incidents = $incidentQuery->get();
+ return $incidentQuery;
+ }
+
+ public function incidentDetailRecords(CarbonInterface $from, CarbonInterface $to, ?string $division, ?string $unit, ?int $borrower = null): Collection
+ {
+ return $this->incidentDetailScope($from, $to, $division, $unit, $borrower)
+ ->with(['lines', 'borrower', 'custody.request'])->orderByDesc('reported_at')->orderBy('id')->get();
+ }
+
+ public function incidentSummary(
+ CarbonInterface $from,
+ CarbonInterface $to,
+ ?string $division,
+ ?string $unit,
+ ?int $borrower = null
+ ): array {
+ $incidents = $this->incidentDetailScope($from, $to, $division, $unit, $borrower)->with('lines')->get();
 
  $released = (float) DB::table('custody_lines')
  ->whereIn(
@@ -2903,8 +2931,12 @@ class AnalyticsService
  $completed = $this->completedReturnRecords($from, $to, $division, $unit, $borrower);
  $buckets = [];
 
- foreach ($this->emptyBuckets($from, $to, $periodSelection) as $key => $bucket) {
- $buckets[$key] = $bucket + ['on_time' => 0, 'late' => 0];
+ // Include every calendar bucket intersecting the selected window, even a partial week.
+ $cursor = $from->copy()->startOfDay();
+ while ($cursor->lte($to)) {
+ $key = $this->bucketKey($cursor, $periodSelection);
+ $buckets[$key] ??= ['label' => $this->bucketLabel($cursor, $periodSelection), 'on_time' => 0, 'late' => 0];
+ $cursor = $cursor->addDay();
  }
 
  foreach ($completed as $row) {
@@ -3314,13 +3346,9 @@ class AnalyticsService
  *
  * @return array<string, mixed>
  */
- public function returnConditions(
- CarbonInterface $from,
- CarbonInterface $to,
- ?string $division,
- ?string $unit,
- ?int $borrower = null
- ): array {
+ /** Inspection-event scope, including partial inspections. */
+ private function returnInspectionScope(CarbonInterface $from, CarbonInterface $to, ?string $division, ?string $unit, ?int $borrower = null): \Illuminate\Database\Query\Builder
+ {
  $query = DB::table('return_lines')
  ->join('return_transactions', 'return_transactions.id', '=', 'return_lines.return_transaction_id')
  ->join('custody_transactions', 'custody_transactions.id', '=', 'return_transactions.custody_transaction_id')
@@ -3333,6 +3361,30 @@ class AnalyticsService
  if ($borrower !== null) {
  $query->where('custody_transactions.borrower_user_id', $borrower);
  }
+
+ return $query;
+ }
+
+ public function returnInspectionEvidence(CarbonInterface $from, CarbonInterface $to, ?string $division, ?string $unit, ?int $borrower = null): Collection
+ {
+ return $this->returnInspectionScope($from, $to, $division, $unit, $borrower)
+ ->leftJoin('custody_lines', 'custody_lines.id', '=', 'return_lines.custody_line_id')
+ ->leftJoin('request_items', 'request_items.id', '=', 'custody_lines.request_item_id')
+ ->select('return_lines.id', 'return_lines.quantity_received', 'return_lines.condition_code',
+ 'return_transactions.return_no', 'return_transactions.received_at',
+ 'custody_transactions.id as custody_id', 'custody_transactions.custody_no',
+ 'request_items.description_snapshot as item', 'request_items.unit_snapshot as unit')
+ ->orderByDesc('return_transactions.received_at')->orderBy('return_lines.id')->get();
+ }
+
+ public function returnConditions(
+ CarbonInterface $from,
+ CarbonInterface $to,
+ ?string $division,
+ ?string $unit,
+ ?int $borrower = null
+ ): array {
+ $query = $this->returnInspectionScope($from, $to, $division, $unit, $borrower);
 
  $rows = $query
  ->groupBy('return_lines.condition_code')

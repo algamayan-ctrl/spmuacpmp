@@ -46,6 +46,10 @@ class AnalyticsCardDetailService
  if (in_array($key, AnalyticsInventoryDetailService::KEYS, true)) {
  return (new AnalyticsInventoryDetailService($this->analytics, $this->inventory))->resolve($scope, $key);
  }
+ // Full-page return evidence is attached after the legacy summary is resolved.
+ if (($scope['return_records_view'] ?? false) && in_array($key, AnalyticsReturnDetailService::CARD_KEYS, true)) {
+ $scope['record_limit'] = min(25, (int) ($scope['record_limit'] ?? 25));
+ }
  $detail = match ($key) {
  /* Overview */
  'overview.insights' => $this->overviewInsights($scope),
@@ -79,6 +83,10 @@ class AnalyticsCardDetailService
  /* scheduled.* details were retired with the Scheduled Demand section. */
  default => $this->unknown($key),
  };
+
+ if (($scope['return_records_view'] ?? false) && in_array($key, AnalyticsReturnDetailService::CARD_KEYS, true)) {
+ return (new AnalyticsReturnDetailService($this->analytics))->card($scope, $key, $detail);
+ }
 
  return in_array($key, [
  'demand.requested-quantity', 'demand.released-quantity', 'demand.active-units',

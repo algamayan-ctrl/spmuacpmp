@@ -11,7 +11,8 @@
  $bars = is_array($detail['bars'] ?? null) ? $detail['bars'] : [];
  $structuredDemand = ! empty($detail['structured_demand']);
  // Inventory evidence uses the same independent breakdown/record renderer as Demand.
- $structuredEvidence = $structuredDemand || ! empty($detail['structured_inventory']);
+ $structuredReturns = ! empty($detail['structured_returns']);
+ $structuredEvidence = $structuredDemand || ! empty($detail['structured_inventory']) || $structuredReturns;
  $breakdownTables = $structuredEvidence ? ($detail['breakdown_tables'] ?? []) : [];
 
  /*
@@ -445,6 +446,30 @@
  display: none !important;
 }
 
+/* Return evidence retains the specialized trend layout, but uses the approved inset controls and complete metric borders. */
+.analytics-records-page.is-return-trend.is-return-evidence .analytics-records-note {
+ display: block !important;
+}
+.analytics-records-page.is-return-trend.is-return-evidence .analytics-records-summary {
+ gap: 12px;
+ padding: 16px;
+ border-top: 0;
+ grid-auto-rows: 1fr;
+}
+.analytics-records-page.is-return-trend.is-return-evidence .analytics-records-stat {
+ border: 1px solid var(--border);
+ border-radius: 9px;
+ overflow-wrap: anywhere;
+}
+.analytics-records-page.is-return-trend.is-return-evidence .analytics-records-card > .record-table-toolbar {
+ margin: 0;
+ padding: 16px;
+}
+.analytics-records-page.is-return-trend.is-return-evidence .analytics-records-card > .record-table-footer {
+ margin-top: 0;
+ padding: 12px 16px;
+}
+
 /* Standard Analytics Records: complete metric tiles and inset record controls. */
 .analytics-records-page:not(.is-return-trend) .analytics-records-summary {
  gap: 12px;
@@ -608,7 +633,7 @@
 
 </style>
 
-<div class="reporting-workspace analytics-records-page{{ $isReturnTrendDetail ? ' is-return-trend' : '' }}">
+<div class="reporting-workspace analytics-records-page{{ $isReturnTrendDetail ? ' is-return-trend' : '' }}{{ $structuredReturns ? ' is-return-evidence' : '' }}">
  <section class="analytics-records-heading">
  <div>
  <p class="analytics-records-eyebrow">Analytics records</p>
@@ -787,12 +812,13 @@
  @foreach($breakdownTables as $breakdown)
  @php
  $visual = $breakdown['visual'] ?? null;
+ $evidenceTable = $structuredReturns && ! empty($breakdown['evidence']);
  $barColumn = $breakdown['bar_column'] ?? null;
  $largest = $barColumn === null ? 0 : max(0, ...array_map(fn ($row) => (float) ($row[$barColumn] ?? 0), $breakdown['rows']));
  @endphp
  <section class="analytics-records-card analytics-demand-breakdown" aria-label="{{ $breakdown['title'] }}">
  <div class="analytics-records-card-head">
- <div><p class="analytics-records-eyebrow">Analytics breakdown</p><h2>{{ $breakdown['title'] }}</h2></div>
+ <div><p class="analytics-records-eyebrow">{{ $evidenceTable ? 'Supporting records' : 'Analytics breakdown' }}</p><h2>{{ $breakdown['title'] }}</h2></div>
  </div>
  @if($visual === 'hours')
  <div class="demand-hours" aria-label="Hourly filing counts">
@@ -825,13 +851,20 @@
  @endif
  @endif
  <div class="analytics-records-table-wrap">
- <table class="analytics-records-table">
+ <table class="analytics-records-table" @if($evidenceTable) data-record-table="{{ $breakdown['title'] }}" data-record-filter-column="{{ $breakdown['filter_column'] }}" data-record-filter-label="{{ $breakdown['filter_label'] }}" @endif>
  <thead><tr>@foreach($breakdown['columns'] as $column)<th scope="col">{{ $column }}</th>@endforeach</tr></thead>
  <tbody>
  @foreach($breakdown['rows'] as $row)
  <tr>
  @foreach($row as $index => $cell)
- <td @if(is_numeric($cell)) class="is-number" @endif>{{ $cell ?? '—' }}
+ <td @if(is_numeric($cell)) class="is-number" @endif>
+ @if($evidenceTable && is_array($cell))
+ <a class="analytics-records-source-link" href="{{ $cell['url'] }}">{{ $cell['primary'] }}</a>
+ @elseif($evidenceTable && ($breakdown['columns'][$index] ?? '') === 'Status')
+ <span class="analytics-records-status {{ $statusTone((string) $cell) }}">{{ $cell }}</span>
+ @else
+ {{ $cell ?? '—' }}
+ @endif
  @if($index === $barColumn && $largest > 0 && (float) $cell >= 0)
  <span class="demand-evidence-bar" aria-hidden="true"><span style="width: {{ min(100, (float) $cell / $largest * 100) }}%"></span></span>
  @endif
@@ -867,7 +900,7 @@
  </div>
 
  <div class="analytics-records-table-wrap">
- <table class="analytics-records-table" data-analytics-record-table data-record-table="Analytics records"
+ <table class="analytics-records-table" data-analytics-record-table data-record-table="{{ $structuredReturns ? ($detail['table_title'] ?? 'Analytics records') : 'Analytics records' }}"
  @if($structuredEvidence && isset($detail['table_filter_column'])) data-record-filter-column="{{ (int) $detail['table_filter_column'] }}" @endif
  @if($structuredEvidence && ! empty($detail['table_filter_label'])) data-record-filter-label="{{ $detail['table_filter_label'] }}" @endif>
  <thead>
@@ -885,7 +918,7 @@
  $columnLabel = (string) ($columns[$cellIndex] ?? '');
  $isStatusColumn = in_array(
  str($columnLabel)->lower()->toString(),
- ['status', 'state', 'result'],
+ $structuredReturns ? ['status', 'state', 'result', 'outcome'] : ['status', 'state', 'result'],
  true
  );
 
