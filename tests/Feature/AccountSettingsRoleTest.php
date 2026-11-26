@@ -54,7 +54,7 @@ class AccountSettingsRoleTest extends TestCase
             $this->actingAs($user)->get(route('profile.show'))
                 ->assertOk()
                 ->assertSee('Account Settings')
-                ->assertSee('Account Information')
+                ->assertSee('Profile Information')
                 ->assertSee('Borrower / Employee Number')
                 ->assertSee('E-signature');
         }

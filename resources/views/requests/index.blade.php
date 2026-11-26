@@ -6,213 +6,20 @@
     $isBorrower = session('active_workspace') === 'BORROWER';
     $classification = auth()->user()?->access_classification?->value;
     $isActionOfficer = ! $isBorrower && $classification === 'SPMU_OFFICER';
-    $isSpmuHead = ! $isBorrower && $classification === 'SPMU_HEAD';
-    $returnMetrics = app(\App\Services\ReturnMetricsService::class);
-
-    /*
-     * Request Records uses one short, role-specific label for each current
-     * borrowing stage. Accountability sub-stages and retired workflow names
-     * are grouped into the few statuses that are useful in this record list.
-     */
-    $requestRecordStatus = static function ($request) use ($isBorrower, $isActionOfficer, $isSpmuHead, $returnMetrics): array {
-        if ($isActionOfficer) {
-            return \App\Support\ActionOfficerStatusPresentation::forRequest($request);
-        }
-
-        if ($request->custody) {
-            $custody = $request->custody;
-            $workflow = $custody->workflowStatus();
-            $workflowKey = $workflow['key'];
-            $accountabilityKeys = [
-                'INCIDENT_OPEN', 'OBLIGATION_OPEN', 'FOR_BILLING',
-                'BILLING_PENDING', 'BILLING_OPEN', 'BILLING_ISSUED',
-                'PAYMENT_VERIFICATION', 'RECEIPT_SUBMITTED',
-                'COMPLIANCE_REQUIRED', 'COMPLIANCE_RSLDDP_PENDING',
-                'F2F_PROCESSING', 'RSLDDP_AWAITING_UPLOAD',
-                'RSLDDP_FOR_ACCOUNTING_PROCESSING', 'RSLDDP_PAYMENT_REQUIRED',
-                'RSLDDP_DISPOSITION_PENDING', 'RSLDDP_COMPLIANCE_VERIFICATION',
-                'RSLDDP_FOR_RESOLUTION', 'BORROWING_RESTRICTED', 'LATE_RETURN',
-            ];
-            $slldpKeys = [
-                'F2F_PROCESSING', 'COMPLIANCE_RSLDDP_PENDING',
-                'RSLDDP_AWAITING_UPLOAD', 'RSLDDP_FOR_ACCOUNTING_PROCESSING',
-                'RSLDDP_PAYMENT_REQUIRED', 'RSLDDP_DISPOSITION_PENDING',
-                'RSLDDP_COMPLIANCE_VERIFICATION', 'RSLDDP_FOR_RESOLUTION',
-            ];
-
-            if (in_array($workflowKey, $accountabilityKeys, true)) {
-                if ($isBorrower) {
-                    // The borrowing/return transaction is done; its separate
-                    // Accountability case remains available in My Obligations.
-                    return ['key' => 'COMPLETED', 'label' => 'Completed', 'group' => 'completed'];
-                }
-
-                if ($isActionOfficer || in_array($workflowKey, $slldpKeys, true)) {
-                    return ['key' => 'SLDDP', 'label' => 'SLDDP', 'group' => 'attention'];
-                }
-
-                return ['key' => 'ACCOUNTABILITY_REVIEW', 'label' => 'Accountability Review', 'group' => 'attention'];
-            }
-
-            if (($isActionOfficer || $isSpmuHead)
-                && $returnMetrics->state($custody) === \App\Services\ReturnMetricsService::RETURNED_LATE) {
-                return ['key' => 'RETURNED_LATE', 'label' => 'Returned Late', 'group' => 'attention'];
-            }
-
-            return match ($workflowKey) {
-                'PICKUP_EXPIRED' => ['key' => 'MISSED_PICKUP', 'label' => 'Missed Pickup', 'group' => 'attention'],
-                'PICKUP_SCHEDULING', 'ITEM_PREPARATION', 'PREPARING_RELEASE' => [
-                    'key' => 'FOR_ISSUANCE',
-                    'label' => 'For Issuance',
-                    'group' => 'release',
-                ],
-                'READY_FOR_RELEASE' => ['key' => 'READY_FOR_PICKUP', 'label' => 'Ready for Pickup', 'group' => 'release'],
-                'BORROWED' => [
-                    'key' => 'ON_CUSTODY',
-                    'label' => 'On Custody',
-                    'group' => 'custody',
-                ],
-                'RETURN_PROCESSING', 'LINEN_PENDING', 'GATE_PASS_PENDING' => $isActionOfficer
-                    ? ['key' => 'RETURN_INSPECTION', 'label' => 'Return Inspection', 'group' => 'return']
-                    : ['key' => 'ON_CUSTODY', 'label' => 'On Custody', 'group' => 'custody'],
-                'BORROWER_CLEARED' => ['key' => 'COMPLETED', 'label' => 'Completed', 'group' => 'completed'],
-                default => $workflow,
-            };
-        }
-
-        $status = $request->status;
-        $rawKey = strtoupper($status instanceof BackedEnum ? $status->value : (string) $status);
-
-        return match ($rawKey) {
-            'DRAFT' => ['key' => 'DRAFT', 'label' => 'Draft', 'group' => 'request'],
-            'SIGNED', 'SUBMITTED' => [
-                'key' => $isBorrower ? 'FOR_REVIEW' : ($isActionOfficer ? 'FOR_VERIFICATION' : 'FOR_APPROVAL'),
-                'label' => $isBorrower ? 'For Review' : ($isActionOfficer ? 'For Verification' : 'For Approval'),
-                'group' => 'request',
-            ],
-            'UNDER_SPMU', 'UNDER_GSU', 'UNDER_VPAF' => (function () use ($request, $isBorrower, $isActionOfficer, $isSpmuHead): array {
-                if ($isBorrower) {
-                    return [
-                        'key' => 'FOR_REVIEW',
-                        'label' => 'For Review',
-                        'group' => 'request',
-                    ];
-                }
-
-                if ($isActionOfficer) {
-                    $steps = $request->currentVersion?->approvalSteps ?? collect();
-                    $verificationPending = $steps->contains(
-                        fn ($step) => (int) $step->sequence_no === 1
-                            && strtoupper((string) ($step->stage_code instanceof BackedEnum ? $step->stage_code->value : $step->stage_code)) === 'SPMU'
-                            && in_array((string) $step->decision, ['PENDING', 'RECEIVED'], true)
-                    );
-
-                    if ($verificationPending) {
-                        return [
-                            'key' => 'FOR_VERIFICATION',
-                            'label' => 'For Verification',
-                            'group' => 'request',
-                        ];
-                    }
-                }
-
-                return [
-                    'key' => 'FOR_APPROVAL',
-                    'label' => $isSpmuHead ? 'For Approval' : 'For Approval',
-                    'group' => 'request',
-                ];
-            })(),
-            'RETURNED_FOR_REVISION' => [
-                'key' => 'NEEDS_REVISION',
-                'label' => 'Needs Revision',
-                'group' => 'request',
-            ],
-            'FINAL_APPROVED_AWAITING_DOWNLOAD', 'APPROVED_READY_FOR_RELEASE' => [
-                'key' => 'FOR_ISSUANCE',
-                'label' => 'For Issuance',
-                'group' => 'request',
-            ],
-            'REJECTED' => ['key' => 'REJECTED', 'label' => 'Rejected', 'group' => 'request'],
-            'CANCELLED' => ['key' => 'CANCELLED', 'label' => 'Cancelled', 'group' => 'request'],
-            'EXPIRED' => ['key' => 'CANCELLED', 'label' => 'Cancelled', 'group' => 'request'],
-            default => [
-                'key' => $rawKey,
-                'label' => str($rawKey)->replace('_', ' ')->lower()->title()->toString(),
-                'group' => 'request',
-            ],
-        };
-    };
-
-    $requestStatusOrder = [
-        'DRAFT' => 10,
-        'FOR_REVIEW' => 20,
-        'FOR_VERIFICATION' => 20,
-        'FOR_APPROVAL' => 20,
-        'NEEDS_REVISION' => 30,
-        'PICKUP_SCHEDULED' => 40,
-        'FOR_ISSUANCE' => 50,
-        'READY_FOR_PICKUP' => 60,
-        'MISSED_PICKUP' => 70,
-        'ON_CUSTODY' => 80,
-        'RETURN_INSPECTION' => 90,
-        'OVERDUE' => 100,
-        'RETURNED_LATE' => 110,
-        'SLDDP' => 120,
-        'ACCOUNTABILITY_REVIEW' => 130,
-        'COMPLETED' => 140,
-        'CANCELLED' => 150,
-        'REJECTED' => 160,
-    ];
-
-    /*
-     * Keep current record wording and add supported stages with no rows.
-     * Retired GSU/VPAF stages remain normalized for historical records.
-     */
-    $requestRecordsForFilters = method_exists($requests, 'items')
-        ? collect($requests->items())
-        : collect($requests);
-
-    // Keep only the concise statuses supported by this role, even when no
-    // current row is in one of those stages. Internal and legacy keys never
-    // become filter options.
-    $supportedStatusLabels = [
-        ...($isBorrower ? ['DRAFT' => 'Draft', 'FOR_REVIEW' => 'For Review'] : []),
-        ...($isActionOfficer ? ['FOR_VERIFICATION' => 'For Verification'] : []),
-        ...($isSpmuHead ? ['FOR_APPROVAL' => 'For Approval'] : []),
-        'NEEDS_REVISION' => 'Needs Revision',
-        'PICKUP_SCHEDULED' => 'Pickup Scheduled',
-        'FOR_ISSUANCE' => 'For Issuance',
-        'READY_FOR_PICKUP' => 'Ready for Pickup',
-        'MISSED_PICKUP' => 'Missed Pickup',
-        'ON_CUSTODY' => 'On Custody',
-        ...($isActionOfficer ? ['RETURN_INSPECTION' => 'Return Inspection'] : []),
-        'OVERDUE' => 'Overdue',
-        ...(($isActionOfficer || $isSpmuHead) ? ['RETURNED_LATE' => 'Returned Late', 'SLDDP' => 'SLDDP'] : []),
-        ...($isSpmuHead ? ['ACCOUNTABILITY_REVIEW' => 'Accountability Review'] : []),
-        'COMPLETED' => 'Completed',
-        'CANCELLED' => 'Cancelled',
-        'REJECTED' => 'Rejected',
-    ];
-    $requestFilterStatuses = $isActionOfficer
-        ? collect(\App\Support\ActionOfficerStatusPresentation::filters())
-            ->map(fn ($label, $key) => ['key' => $key, 'label' => $label])
-            ->values()
-        : $requestRecordsForFilters->map($requestRecordStatus)
-        ->concat(collect($supportedStatusLabels)->map(fn ($label, $key) => ['key' => $key, 'label' => $label]))
-        ->unique('key')
-        ->sortBy(fn (array $status): int => $requestStatusOrder[$status['key']] ?? 999)
-        ->values();
+    $requestRecordStatus = static fn ($request): array => \App\Support\RequestRecordStatus::forRequest($request);
+    $requestFilterStatuses = collect(\App\Support\RequestRecordStatus::filters())
+        ->map(fn ($label, $key) => ['key' => $key, 'label' => $label])->values();
 @endphp
 
 <section class="page-heading">
     <div>
         @if($isBorrower)
-            <p class="eyebrow">Request tracking</p>
+            <p class="eyebrow">Ongoing requests</p>
         @endif
         <h1>{{ $isBorrower ? 'My Requests' : 'Request Records' }}</h1>
 
         @if($isBorrower)
-            <p>Review your borrowing requests, current status, required actions, and release progress.</p>
+            <p>Track your ongoing requests and drafts. View completed, cancelled, and rejected records in My Borrowings.</p>
         @else
             <p>View borrowing requests and their transaction history.</p>
         @endif
@@ -262,9 +69,6 @@
         <label>Status
             <select data-record-status-filter>
                 <option value="all">All statuses</option>
-                @if($isActionOfficer)
-                    <option value="NEEDS_ATTENTION">Needs Attention</option>
-                @endif
                 @foreach($requestFilterStatuses as $filterStatus)
                     <option value="{{ $filterStatus['key'] }}">{{ $filterStatus['label'] }}</option>
                 @endforeach

@@ -56,7 +56,7 @@
 
     // Returned evidence remains previewable, but a new correction needs fresh uploads.
     $requestLetterForSubmission = $isReturned ? null : $requestLetter;
-    $ptcForSubmission = $isReturned ? null : $ptc;
+    $ptcForSubmission = $isExternalBorrower || $isReturned ? null : $ptc;
 
     $maxUploadMb = max(1, (int) ($maxUploadMb ?? 5));
 
@@ -1529,10 +1529,12 @@
                     <span>Premises</span>
                     <strong id="summary-premises" class="review-summary-pill is-positive">On-campus</strong>
                 </div>
+                @if(!$isExternalBorrower)
                 <div class="review-summary-field">
                     <span>Student Activity</span>
                     <strong id="summary-student-activity" class="review-summary-pill is-neutral">No</strong>
                 </div>
+                @endif
             </div>
 
             <hr class="request-section-rule">
@@ -1606,6 +1608,7 @@
                     </label>
                 </div>
 
+                @if(!$isExternalBorrower)
                 <div class="document-row" id="ptc-document-box">
                     <div class="document-row-info">
                         <strong>
@@ -1645,6 +1648,7 @@
                         <span class="document-dropzone-file" data-dropzone-file hidden></span>
                     </label>
                 </div>
+                @endif
             </div>
         </section>
 
@@ -1930,7 +1934,7 @@ document.addEventListener('DOMContentLoaded', () => {
         summaryPremises?.classList.toggle('is-positive', !isOffCampus);
         summaryPremises?.classList.toggle('is-elevated', isOffCampus);
 
-        const isStudentActivity = Boolean(studentToggle?.checked);
+        const isStudentActivity = Boolean(!externalBorrower && studentToggle?.checked);
         setSummaryText(
             summaryStudentActivity,
             isStudentActivity ? 'Yes' : 'No',
@@ -2193,7 +2197,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const requestLetterReady = Boolean(
             requestLetterAlreadyUploaded || requestLetterInput?.files?.length
         );
-        const ptcRequired = Boolean(studentToggle?.checked);
+        const ptcRequired = Boolean(!externalBorrower && studentToggle?.checked);
         const ptcReady = Boolean(
             !ptcRequired || ptcAlreadyUploaded || ptcInput?.files?.length
         );
@@ -2226,7 +2230,7 @@ document.addEventListener('DOMContentLoaded', () => {
             requestLetterInput?.files?.length
         );
 
-        const ptcRequired = Boolean(studentToggle?.checked);
+        const ptcRequired = Boolean(!externalBorrower && studentToggle?.checked);
 
         const ptcReady = Boolean(
             !ptcRequired ||
@@ -2398,7 +2402,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function syncStudentFields() {
-        const active = Boolean(studentToggle?.checked);
+        const active = Boolean(!externalBorrower && studentToggle?.checked);
 
         if (ptcDocumentBox) {
             ptcDocumentBox.hidden = !active;
@@ -3285,7 +3289,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const requestLetterReady = Boolean(
             requestLetterInput?.files?.length || {{ $requestLetterForSubmission ? 'true' : 'false' }}
         );
-        const ptcRequired = Boolean(studentToggle?.checked);
+        const ptcRequired = Boolean(!externalBorrower && studentToggle?.checked);
         const ptcReady = Boolean(
             !ptcRequired || ptcInput?.files?.length || {{ $ptcForSubmission ? 'true' : 'false' }}
         );

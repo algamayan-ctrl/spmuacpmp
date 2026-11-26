@@ -9,7 +9,7 @@
         App\Models\RequestSupportingDocument::TYPE_REQUEST_LETTER
     );
 
-    $requiresPtc = (bool) $version->represents_student_activity;
+    $requiresPtc = $version->requiresPermissionToConduct();
 
     $ptc = $currentSupporting->firstWhere(
         'document_type',

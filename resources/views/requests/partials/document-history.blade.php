@@ -26,7 +26,7 @@
                 </p>
 
                 <div class="table-wrap">
-                    <table data-record-table="Document history" data-record-filter-column="4" data-record-filter-label="Status" data-record-dates>
+                    <table data-record-table="Document history" data-record-controls="pagination">
                         <thead>
                             <tr>
                                 <th scope="col">Version</th>

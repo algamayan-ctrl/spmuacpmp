@@ -98,13 +98,31 @@ class RequestVersion extends Model
         return $this->affiliation_type === RegistrationType::External;
     }
 
+    public function requiresPermissionToConduct(): bool
+    {
+        return ! $this->isExternalAffiliation() && (bool) $this->represents_student_activity;
+    }
+
     public function affiliationLabel(): string
     {
         if ($this->isExternalAffiliation()) {
-            return $this->external_company_name ?: 'External borrower';
+            return filled($this->external_company_name) ? $this->external_company_name : 'Not recorded';
         }
 
         return $this->office_unit ?: ($this->request?->accountableUnit?->unit_name ?: '—');
+    }
+
+    public function affiliationTypeLabel(): string
+    {
+        if ($this->affiliation_type) {
+            return $this->affiliation_type->label();
+        }
+
+        // Legacy employee versions retain their saved CSPC affiliation. Never
+        // infer an external type/company from a later account-profile change.
+        return filled($this->office_unit) || $this->request?->accountable_unit_id
+            ? RegistrationType::Employee->label()
+            : 'Not recorded';
     }
 
     public function items(): HasMany

@@ -61,7 +61,7 @@
             @if($previousControlNumbers)
                 <p class="meta">Previous Control No.: {{ implode(', ', $previousControlNumbers) }}</p>
             @endif
-            <x-status-badge :status="$detailStatus" :label="$detailStatusLabel" />
+            <x-status-badge :status="$recordBadge['key']" :label="$recordBadge['label']" data-record-status />
         </div>
         <p>{{ $v->purpose_event }}</p>
     </div>

@@ -3,6 +3,8 @@
     'topbarTitle' => session('active_workspace') === 'BORROWER' ? 'My Requests' : 'Request Records',
 ])
 @section('content')
+<link rel="stylesheet" href="{{ App\Support\StaticAsset::url('css/transaction-record-details.css') }}?v={{ filemtime(public_path('css/transaction-record-details.css')) }}">
+<div class="transaction-record-detail">
 @php
     $v = $borrowingRequest->currentVersion;
     $workspace = session('active_workspace');
@@ -10,6 +12,9 @@
     $isSpmu = $workspace === 'SPMU';
     $hasCurrentESignature = auth()->user()->currentSignature()->whereHas('file')->exists();
     $currentDocs = $v->supportingDocuments->where('is_current', true);
+    if ($v->isExternalAffiliation()) {
+        $currentDocs = $currentDocs->where('document_type', '!=', App\Models\RequestSupportingDocument::TYPE_PERMISSION_TO_CONDUCT);
+    }
     $requestLetterDoc = $currentDocs->firstWhere(
         'document_type',
         App\Models\RequestSupportingDocument::TYPE_REQUEST_LETTER
@@ -68,7 +73,7 @@
     $requiresNewRevisionVersion = $borrowingRequest->status === App\Enums\RequestStatus::ReturnedForRevision;
 
     $signedRequestLetterReady = (bool) $requestLetterDoc;
-    $ptcRequired = (bool) $v->represents_student_activity;
+    $ptcRequired = $v->requiresPermissionToConduct();
     $ptcReady = ! $ptcRequired || (bool) $permissionToConductDoc;
     $submissionReady = $signedRequestLetterReady && $ptcReady;
 
@@ -125,6 +130,11 @@
             $detailStatusLabel = 'Gate Pass Processing';
         }
     }
+
+    // Main staff record status must match Request Records; workflow keys still drive actions.
+    $recordBadge = $isSpmu
+        ? \App\Support\RequestRecordStatus::forRequest($borrowingRequest)
+        : ['key' => $detailStatus, 'label' => $detailStatusLabel];
 
     $pickupMissedForBorrower = $isBorrower
         && ($custodyWorkflowStatus['key'] ?? null) === 'PICKUP_EXPIRED';
@@ -187,7 +197,7 @@
     </div>
 
     <div class="request-heading-actions">
-        <x-status-badge :status="$detailStatus" :label="$detailStatusLabel" />
+        <x-status-badge :status="$recordBadge['key']" :label="$recordBadge['label']" data-record-status />
 
         @if($isBorrower && $borrowingRequest->custody)
             <a
@@ -254,29 +264,7 @@
 </style>
 
 @if($requiresNewRevisionVersion)
-<section class="content-area borrower-current-action-area" id="borrower-next-action">
-    <div class="action-panel action-warning borrower-revision-panel">
-        <div class="borrower-revision-copy">
-            <h2>Revision required</h2>
-
-            @if($revisionRemarks !== '')
-                <div class="borrower-revision-reason">
-                    <span>Required corrections</span>
-                    <p>{{ $revisionRemarks }}</p>
-                </div>
-            @endif
-
-            <p>Update the request, then E-sign and submit it again.</p>
-        </div>
-
-        <a
-            class="button primary ui-pressable"
-            href="{{ route('requests.edit', $borrowingRequest) }}"
-        >
-            <span>Revise Request</span>
-        </a>
-    </div>
-</section>
+    @include('requests.partials.revision-panel')
 @elseif($isBorrowerDraftWorkflow)
 <section class="content-area borrower-current-action-area" id="borrower-next-action">
     <div class="action-panel action-neutral">
@@ -336,9 +324,8 @@
 @endif
 
 @unless($isBorrower)
-    @if(!$obligationSummary)
-        <x-request-progress-tracker :request="$borrowingRequest" :show-current-status="false" :compact="$isOperationalRequestLayout" />
-    @endif
+    <x-request-progress-tracker :request="$borrowingRequest" :show-current-status="false" :compact="$isOperationalRequestLayout" />
+    <x-return-inspection-summary :custody="$custody" />
 @endunless
 
 @if($isBorrower)
@@ -356,58 +343,6 @@
 
 .borrower-current-action-note {
     margin-bottom: 0;
-}
-
-.borrower-revision-panel {
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 18px;
-    padding: 14px 16px;
-    background: var(--surface-elevated);
-    border-left-color: var(--warning);
-}
-
-.borrower-revision-copy {
-    display: grid;
-    flex: 1 1 auto;
-    gap: 6px;
-    min-width: 0;
-}
-
-.borrower-revision-copy h2,
-.borrower-revision-copy p {
-    margin: 0;
-}
-
-.borrower-revision-reason {
-    width: 100%;
-    max-width: none;
-    padding: 8px 10px;
-    color: var(--text-secondary);
-    background: var(--surface-elevated);
-    border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--border));
-    border-left: 3px solid var(--warning);
-    border-radius: 6px;
-}
-
-.borrower-revision-reason span {
-    display: block;
-    margin-bottom: 2px;
-    color: var(--heading);
-    font-size: 11px;
-    font-weight: 800;
-    letter-spacing: .04em;
-    text-transform: uppercase;
-}
-
-.borrower-revision-reason p {
-    color: var(--text-secondary);
-}
-
-.borrower-revision-panel > .button {
-    flex: 0 0 auto;
-    align-self: center;
-    margin: 0;
 }
 
 .request-tracker-card {
@@ -553,7 +488,7 @@
                     :file="$requestLetterDoc?->file"
                     title="Inspect the signed Borrowing Request Letter"
                 />
-                @if($v->represents_student_activity)
+                @if($ptcRequired)
                     <div
                         class="spmu-document-tabs"
                         data-spmu-document-tabs
@@ -657,7 +592,7 @@
                     action="{{ $canVerify ? route('verifications.verify', $borrowingRequest) : route('approvals.decide', $borrowingRequest) }}"
                     class="spmu-verification-form top-gap"
                     data-verification-form
-                    data-required-supporting-present="{{ ($requestLetterDoc && (!$v->represents_student_activity || $permissionToConductDoc)) ? '1' : '0' }}"
+                    data-required-supporting-present="{{ ($requestLetterDoc && (!$ptcRequired || $permissionToConductDoc)) ? '1' : '0' }}"
                     data-has-current-e-signature="{{ $hasCurrentESignature ? '1' : '0' }}"
                 >
                     @csrf
@@ -879,6 +814,11 @@
                 </div>
 
                 <div class="spmu-left-borrowing-cell">
+                    <span>Borrower Type</span>
+                    <strong>{{ $v->affiliationTypeLabel() }}</strong>
+                </div>
+
+                <div class="spmu-left-borrowing-cell">
                     <span>{{ $v->isExternalAffiliation() ? 'Company / Agency / Institution' : 'Office / College / Unit' }}</span>
                     <strong>{{ $v->affiliationLabel() }}</strong>
                 </div>
@@ -893,10 +833,12 @@
                     <strong>{{ $v->location }}</strong>
                 </div>
 
+                @if(!$v->isExternalAffiliation())
                 <div class="spmu-left-borrowing-cell">
                     <span>Student Activity</span>
-                    <strong>{{ $v->represents_student_activity ? 'Yes' : 'No' }}</strong>
+                    <strong>{{ $ptcRequired ? 'Yes' : 'No' }}</strong>
                 </div>
+                @endif
 
                 <div class="spmu-left-borrowing-cell">
                     <span>Date Needed</span>
@@ -908,7 +850,9 @@
                     <strong>{{ optional($v->return_date ?: $v->return_due_at)->format('d F Y') }}</strong>
                 </div>
 
-            </div></article>
+            </div>
+            <x-borrower-contact-details :borrower="$borrowingRequest->borrower" />
+        </article>
 
         <div class="spmu-inventory-slot">
             @include('requests.partials.spmu-availability-review')
@@ -919,11 +863,11 @@
 
 @if($isBorrower)
 @include('requests.partials.borrower-detail-styles')
-@if(!$obligationSummary)
 <div class="borrower-progress-always" aria-label="Current request progress">
     <x-request-progress-tracker :request="$borrowingRequest" :show-current-status="false" />
 </div>
-@elseif($gatePassOnlyPending)
+<x-return-inspection-summary :custody="$custody" />
+@if($gatePassOnlyPending)
 <div class="content-area">
     <div class="callout info">
         <strong>Gate Pass Processing</strong>
@@ -950,6 +894,10 @@
 
             <div class="borrower-fact-grid">
                 <div>
+                    <span>Borrower Type</span>
+                    <strong>{{ $v->affiliationTypeLabel() }}</strong>
+                </div>
+                <div>
                     <span>{{ $v->isExternalAffiliation() ? 'Company / Agency / Institution' : 'Office / College / Unit' }}</span>
                     <strong>{{ $v->affiliationLabel() }}</strong>
                 </div>
@@ -965,15 +913,18 @@
                     <span>Expected Return</span>
                     <strong>{{ optional($v->return_date ?: $v->return_due_at)->format('d M Y') }}</strong>
                 </div>
+                @if(!$v->isExternalAffiliation())
                 <div>
                     <span>Student Activity</span>
-                    <strong>{{ $v->represents_student_activity ? 'Yes' : 'No' }}</strong>
+                    <strong>{{ $ptcRequired ? 'Yes' : 'No' }}</strong>
                 </div>
+                @endif
                 <div>
                     <span>Premises</span>
                     <strong>{{ $v->off_campus ? 'Off-campus · Gate Pass required' : 'On-campus' }}</strong>
                 </div>
             </div>
+            <x-borrower-contact-details :borrower="$borrowingRequest->borrower" />
         </article>
 
         <article class="borrower-detail-card">
@@ -1129,6 +1080,9 @@
             <dt>Borrower</dt>
             <dd>{{ $borrowingRequest->borrower->full_name }}</dd>
 
+            <dt>Borrower Type</dt>
+            <dd>{{ $v->affiliationTypeLabel() }}</dd>
+
             <dt>{{ $v->isExternalAffiliation() ? 'Company / Agency / Institution' : 'Office / College / Unit' }}</dt>
             <dd>{{ $v->affiliationLabel() }}</dd>
 
@@ -1144,9 +1098,12 @@
             <dt>Expected Return Date</dt>
             <dd>{{ optional($v->return_date ?: $v->return_due_at)->format('d F Y') }}</dd>
 
-            <dt>Student Activity</dt>
-            <dd>{{ $v->represents_student_activity ? 'Yes' : 'No' }}</dd>
+            @if(!$v->isExternalAffiliation())
+                <dt>Student Activity</dt>
+                <dd>{{ $ptcRequired ? 'Yes' : 'No' }}</dd>
+            @endif
         </dl>
+        <x-borrower-contact-details :borrower="$borrowingRequest->borrower" />
     </article>
 
     <article class="card">
@@ -4931,4 +4888,5 @@
 {{-- /* ADMIN REQUEST DETAILS CLEAN END */ --}}
 </style>
 
+</div>
 @endsection

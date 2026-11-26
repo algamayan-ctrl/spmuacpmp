@@ -1,0 +1,111 @@
+/* Record details only: read-only summaries retain equal desktop columns. */
+.transaction-record-detail { min-width: 0; }
+.transaction-record-detail .request-operational-page .request-operational-grid,
+.transaction-record-detail .record-summary-grid,
+.transaction-record-detail .release-flow-page .release-overview-grid,
+.transaction-record-detail .borrower-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+    gap: 12px;
+}
+.transaction-record-detail .request-operational-grid > .card,
+.transaction-record-detail .record-summary-grid > .card,
+.transaction-record-detail .release-overview-grid > .card,
+.transaction-record-detail .borrower-detail-grid > .borrower-detail-card { min-width: 0; height: 100%; }
+.transaction-record-detail .request-operational-page .request-operational-heading { margin-bottom: 14px; }
+.transaction-record-detail .request-operational-page .request-operational-identity > p { margin-top: 4px; font-size: 13px; }
+.transaction-record-detail .request-operational-page .request-operational-grid .card-header { padding: 10px 12px; margin: 0; min-height: 58px; align-items: center; }
+.transaction-record-detail .request-operational-page .request-section-title { font-size: 15px; }
+.transaction-record-detail .request-operational-page .request-information-list { margin: 4px 10px; }
+.transaction-record-detail .request-operational-page .request-information-list dt,
+.transaction-record-detail .request-operational-page .request-information-list dd { padding-top: 5px; padding-bottom: 5px; font-size: 12px; line-height: 1.4; }
+.transaction-record-detail .request-operational-page .request-operational-document-list { padding: 0 10px 8px; }
+.transaction-record-detail .request-operational-page .request-operational-document { min-height: 0; padding: 8px 4px; gap: 10px; }
+.transaction-record-detail .request-operational-page .request-operational-document-copy { gap: 2px 8px; }
+.transaction-record-detail .request-operational-page .request-document-group-label { margin: 8px 4px 0; font-size: 11px; line-height: 1.3; }
+.transaction-record-detail .request-operational-page .request-documents-heading-copy small { margin-top: 2px; line-height: 1.3; }
+.transaction-record-detail .request-operational-page .request-document-link { min-height: 34px; padding: 6px 10px; font-size: 12px; }
+.transaction-record-detail .request-operational-grid .borrower-contact-disclosure { margin: 4px 10px 8px; font-size: 12px; }
+.transaction-record-detail .borrower-request-detail { gap: 12px; }
+.transaction-record-detail .borrower-request-detail .borrower-card-title { padding: 10px 12px; font-size: 14px; }
+.transaction-record-detail .borrower-fact-grid { gap: 10px 0; padding: 12px; }
+.transaction-record-detail .borrower-fact-grid > div { gap: 3px; }
+.transaction-record-detail .borrower-fact-grid > div > strong { font-size: 13px; }
+.transaction-record-detail .borrower-request-detail .borrower-documents-table th,
+.transaction-record-detail .borrower-request-detail .borrower-documents-table td { padding: 8px 12px; }
+.transaction-record-detail .record-summary-grid .card-header { margin-bottom: 8px; }
+.transaction-record-detail .record-summary-grid p,
+.transaction-record-detail .release-context-card p,
+.transaction-record-detail .release-documents-card p,
+.transaction-record-detail .return-summary-card p,
+.transaction-record-detail .return-documents-card p { margin-top: 3px; margin-bottom: 3px; }
+.transaction-record-detail .record-summary-grid .detail-list dt,
+.transaction-record-detail .record-summary-grid .detail-list dd { padding-top: 5px; padding-bottom: 5px; font-size: 12px; }
+.transaction-record-detail .return-flow-page .return-page-stack { gap: 14px; }
+.transaction-record-detail .return-flow-page .return-top-grid { gap: 12px; }
+.transaction-record-detail .return-flow-page .return-summary-card,
+.transaction-record-detail .return-flow-page .return-documents-card { padding: 12px; }
+.transaction-record-detail .return-flow-page .return-summary-card .card-header { margin-bottom: 8px; }
+.transaction-record-detail .return-flow-page .return-summary-item { padding: 7px 0; }
+.transaction-record-detail .return-flow-page .return-summary-item dd { margin-top: 3px; line-height: 1.4; }
+
+.record-inspection-summary { margin-top: 12px; }
+.transaction-record-detail .record-inspection-summary > .card { padding: 0; overflow: hidden; }
+.record-inspection-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 11px 12px; border-bottom: 1px solid var(--row-border); }
+.record-inspection-heading > .ui-icon { flex-shrink: 0; color: var(--text-muted); }
+.record-inspection-heading h2 { flex: 1 1 240px; margin: 0; color: var(--heading); font-size: 15px; font-weight: 650; line-height: 1.35; }
+.record-inspection-heading .status-badge { white-space: normal; }
+.record-inspection-content { display: grid; gap: 10px; padding: 12px; color: var(--text); font-size: 12px; line-height: 1.4; }
+.record-inspection-content p { margin: 0; }
+.record-inspection-reason { border-left: 3px solid var(--border-strong); padding-left: 10px; }
+.record-inspection-reason.is-flagged { border-left-color: var(--warning); }
+.record-inspection-reason > span { display: block; color: var(--text-muted); font-size: 11px; margin-bottom: 3px; }
+.record-inspection-reason > p { font-weight: 600; overflow-wrap: anywhere; }
+.record-inspection-results { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; }
+.record-inspection-results.has-timing { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
+.record-inspection-table-wrap { min-width: 0; }
+.record-inspection-table { width: 100%; min-width: 0; table-layout: fixed; border-collapse: collapse; }
+.record-inspection-table th,
+.record-inspection-table td { padding: 7px 8px; border-bottom: 1px solid var(--row-border); font-size: 12px; text-transform: none; letter-spacing: 0; line-height: 1.4; vertical-align: top; overflow-wrap: anywhere; white-space: normal; }
+.record-inspection-table th { background: var(--table-heading-bg); color: var(--text-muted); font-size: 11px; text-align: left; }
+.record-inspection-table th:first-child { width: 30%; }
+.record-inspection-table th:nth-child(2) { width: 18%; }
+.record-inspection-findings { display: flex; flex-wrap: wrap; gap: 5px; }
+.record-inspection-finding { display: inline-block; padding: 2px 7px; border-radius: 99px; font-size: 11px; font-weight: 600; background: var(--neutral-bg); color: var(--neutral); }
+.record-inspection-finding.is-success { background: var(--success-bg); color: var(--success); }
+.record-inspection-finding.is-warning { background: var(--warning-bg); color: var(--warning); }
+.record-inspection-finding.is-danger { background: var(--danger-bg); color: var(--danger); }
+.record-inspection-missing { display: block; margin-bottom: 4px; color: var(--text-muted); }
+.record-inspection-timing h3,
+.record-inspection-entry h3 { margin: 0 0 7px; color: var(--heading); font-size: 13px; font-weight: 650; }
+.record-inspection-content dl { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1fr); gap: 5px 12px; margin: 0; }
+.record-inspection-content dt { color: var(--text-muted); }
+.record-inspection-content dd { margin: 0; overflow-wrap: anywhere; }
+.record-inspection-timing > p { margin-top: 7px; font-size: 11px; color: var(--text-muted); }
+.record-inspection-decision { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 5px 12px; }
+.record-inspection-decision > span { color: var(--text-muted); }
+.record-inspection-decision strong { font-weight: 600; overflow-wrap: anywhere; }
+.record-inspection-details { border-top: 1px solid var(--row-border); padding-top: 8px; }
+.record-inspection-details > summary { color: var(--interactive); font-weight: 600; cursor: pointer; }
+.record-inspection-detail-content { display: grid; gap: 12px; padding-top: 10px; }
+.record-inspection-entry { min-width: 0; }
+.record-inspection-entry > p { margin-top: 6px; }
+.record-inspection-remarks { white-space: pre-line; overflow-wrap: anywhere; }
+@media (max-width: 1000px) {
+    .transaction-record-detail .request-operational-page .request-operational-grid,
+    .transaction-record-detail .record-summary-grid,
+    .transaction-record-detail .release-flow-page .release-overview-grid,
+    .transaction-record-detail .borrower-detail-grid,
+    .record-inspection-results.has-timing { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 600px) {
+    .record-inspection-content dl { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+    .record-inspection-content dd { margin-bottom: 6px; }
+    .record-inspection-decision { grid-template-columns: minmax(0, 1fr); }
+    .record-inspection-table th,.record-inspection-table td { padding: 6px 4px; }
+}
+@media (pointer: coarse) {
+    .record-inspection-details > summary { min-height: 44px; display: flex; align-items: center; }
+    .transaction-record-detail .request-operational-page .request-document-link { min-height: 44px; }
+}

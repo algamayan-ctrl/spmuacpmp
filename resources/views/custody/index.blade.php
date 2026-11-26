@@ -21,7 +21,7 @@
             : ($mode === 'return' ? 'Return' : 'Release'));
 
     $pageCopy = match (true) {
-        $isBorrower => 'Check your pickup schedule, items on custody, and completed borrowings.',
+        $isBorrower => 'View all submitted requests, ongoing transactions, and completed records.',
         $mode === 'release' => 'Confirm item preparation, print the required documents, and record the handover.',
         $mode === 'return' => 'Inspect physically returned items, record full-quantity accounting, monitor linen/laundry return, and complete reconciliation.',
         $isHead => 'Monitor item release, active custody, returns, and overdue transactions.',
@@ -136,7 +136,7 @@
 <section class="page-heading">
     <div>
         <p class="eyebrow">
-            {{ $mode === 'return' ? 'Physical return and reconciliation' : ($mode === 'release' ? 'Pickup and physical issuance' : ($isBorrower ? 'Borrowing status' : 'Pickup, issuance and return')) }}
+            {{ $mode === 'return' ? 'Physical return and reconciliation' : ($mode === 'release' ? 'Pickup and physical issuance' : ($isBorrower ? 'All transaction records' : 'Pickup, issuance and return')) }}
         </p>
 
         <h1>{{ $pageTitle }}</h1>
@@ -219,7 +219,7 @@
 @elseif($isBorrower)
     <div class="content-area my-borrowings" data-my-borrowings>
         @if($borrowerKpiFilterLabel)
-            <x-filter-context-banner :label="$borrowerKpiFilterLabel" :count="$custodies->total()" :clear-url="route('custody.index')" />
+            <x-filter-context-banner :label="$borrowerKpiFilterLabel" :count="$borrowerRecords->total()" :clear-url="route('custody.index')" />
         @endif
 
         {{-- GET form: values stay in the URL, and changing them starts again at page 1. --}}
@@ -265,7 +265,7 @@
             <noscript><button class="button secondary" type="submit">Apply</button></noscript>
         </form>
 
-        @if($custodies->total() === 0)
+        @if($borrowerRecords->total() === 0)
             <div class="my-borrowings-card">
                 @if($borrowerFilters['active'])
                     @include('custody.partials.borrowings-empty', [
@@ -279,38 +279,38 @@
                     @include('custody.partials.borrowings-empty', [
                         'emptyHidden' => false,
                         'emptyTitle' => 'No borrowing records yet.',
-                        'emptyMessage' => 'Approved borrowings will appear here once items are allocated for pickup.',
+                        'emptyMessage' => 'Submitted requests will appear here, including ongoing, completed, cancelled, and rejected records.',
                     ])
                 @endif
             </div>
         @else
             <div class="borrowings-results-head">
                 <strong id="borrowings-result-summary" role="status" aria-live="polite">
-                    {{ $custodies->total() }} {{ $custodies->total() === 1 ? 'borrowing record' : 'borrowing records' }}
+                    {{ $borrowerRecords->total() }} {{ $borrowerRecords->total() === 1 ? 'borrowing record' : 'borrowing records' }}
                 </strong>
             </div>
 
             <div class="operational-record-list borrowings-list" id="borrowings-list">
-                @foreach($custodies as $custody)
-                    @include('custody.partials.borrowings-row')
+                @foreach($borrowerRecords as $record)
+                    @include('custody.partials.borrowings-row', ['record' => $record])
                 @endforeach
             </div>
 
-            @if($custodies->isEmpty())
+            @if($borrowerRecords->isEmpty())
                 {{-- Page number past the last page (e.g. an old link). --}}
                 <div class="my-borrowings-card">
                     @include('custody.partials.borrowings-empty', [
                         'emptyHidden' => false,
                         'emptyTitle' => 'This page has no borrowings.',
                         'emptyMessage' => 'Go back to the first page to see your records.',
-                        'emptyActionUrl' => $custodies->url(1),
+                        'emptyActionUrl' => $borrowerRecords->url(1),
                         'emptyActionLabel' => 'Go to first page',
                     ])
                 </div>
             @endif
 
             <div class="borrowings-footer">
-                <p class="borrowings-page-summary" role="status">Showing {{ $custodies->firstItem() ?? 0 }} to {{ $custodies->lastItem() ?? 0 }} of {{ $custodies->total() }} {{ $custodies->total() === 1 ? 'borrowing' : 'borrowings' }}</p>
+                <p class="borrowings-page-summary" role="status">Showing {{ $borrowerRecords->firstItem() ?? 0 }} to {{ $borrowerRecords->lastItem() ?? 0 }} of {{ $borrowerRecords->total() }} {{ $borrowerRecords->total() === 1 ? 'borrowing' : 'borrowings' }}</p>
                 <div class="borrowings-pagination-controls">
                     <select
                         id="borrowings-per-page"
@@ -319,10 +319,10 @@
                         aria-label="Borrowings per page"
                     >
                         @foreach($borrowerPerPageOptions as $size)
-                            <option value="{{ $size }}" @selected($borrowerFilters['per_page'] === $size)>{{ $size }} items per page</option>
+                            <option value="{{ $size }}" @selected($borrowerFilters['per_page'] === $size)>{{ $size }} entries</option>
                         @endforeach
                     </select>
-                    {{ $custodies->onEachSide(1)->links('custody.partials.borrowings-pagination') }}
+                    {{ $borrowerRecords->onEachSide(1)->links('custody.partials.borrowings-pagination') }}
                 </div>
             </div>
         @endif

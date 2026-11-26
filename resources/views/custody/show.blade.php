@@ -9,6 +9,8 @@
 ])
 
 @section('content')
+<link rel="stylesheet" href="{{ App\Support\StaticAsset::url('css/transaction-record-details.css') }}?v={{ filemtime(public_path('css/transaction-record-details.css')) }}">
+<div class="transaction-record-detail">
 @php
     $workspace = strtoupper((string) session('active_workspace'));
     $user = auth()->user();
@@ -152,6 +154,11 @@
         $operationalStatusKey = 'GATE_PASS_PROCESSING';
         $operationalLabel = \App\Support\StatusLabels::label($operationalStatusKey);
     }
+
+    // Keep the record badge aligned with Request Records, independently of action/step labels.
+    $recordBadge = $isSpmu && $custody->request
+        ? \App\Support\RequestRecordStatus::forRequest($custody->request)
+        : ['key' => $operationalStatusKey, 'label' => $isBorrower && $pickupMissed ? 'Pickup Missed' : $operationalLabel];
 
     [$borrowerStateTitle, $borrowerStateCopy, $borrowerStateTone] = match (true) {
         $isBorrower && $gatePassOnlyPending => [
@@ -297,10 +304,9 @@
     </div>
     <div class="borrower-custody-heading-actions">
         <x-status-badge
-            :status="$operationalStatusKey"
-            :label="$isBorrower && $pickupMissed
-                ? 'Pickup Missed'
-                : $operationalLabel"
+            :status="$recordBadge['key']"
+            :label="$recordBadge['label']"
+            data-record-status
         />
 
         @if($isBorrower && $transactionCancelled)
@@ -311,6 +317,9 @@
     </div>
 </section>
 @endif
+
+<x-request-progress-tracker :request="$custody->request" :show-current-status="false" :compact="$isSpmuOfficer" :release-view="$useReleaseProcessLayout" />
+<x-return-inspection-summary :custody="$custody" />
 
 @if($isBorrower)
     @php
@@ -1003,6 +1012,7 @@
                     </div>
                 </div>
 
+                <x-borrower-identity :borrower="$custody->borrower" :version="$custody->requestVersion ?: $version" />
                 <div class="borrower-summary-grid">
                     @foreach($borrowerFacts as [$factLabel, $factValue, $factNote])
                         <div class="borrower-summary-fact">
@@ -1325,9 +1335,7 @@
 @if($useReleaseProcessLayout)
     @include('custody.partials.release-process')
 @else
-    <x-request-progress-tracker :request="$custody->request" :show-current-status="false" />
-
-<section class="content-grid two">
+<section class="content-grid two record-summary-grid">
     <article class="card">
         <div class="card-header">
             <div>
@@ -1336,6 +1344,7 @@
             </div>
         </div>
 
+        <x-borrower-identity :borrower="$custody->borrower" :version="$custody->requestVersion ?: $version" />
         <dl class="detail-list">
             <dt>Purpose / Event</dt>
             <dd>{{ $version?->purpose_event ?: '—' }}</dd>
@@ -1650,4 +1659,5 @@
 @if($useReleaseProcessLayout)
     </div>
 @endif
+</div>
 @endsection

@@ -16,8 +16,7 @@
     $custodyWorkflow = $custody?->workflowStatus();
 
     // Shared with the server-side status filter so the badge and filter agree.
-    // Accountability cases and Gate-Pass-only processing show as Completed;
-    // they are followed up in My Obligations.
+    // Uses the same Admin status classification as both staff record lists.
     ['key' => $statusKey, 'label' => $statusLabel] = $request->borrowerRecordStatus();
 
     $requiresAction = (
@@ -35,7 +34,7 @@
     $statusGroup = match (true) {
         $statusKey === 'COMPLETED' => 'completed',
         in_array($statusKey, ['CANCELLED', 'REJECTED'], true) => 'closed',
-        in_array($statusKey, ['MISSED_PICKUP', 'OVERDUE'], true) => 'attention',
+        in_array($statusKey, ['MISSED_PICKUP', 'OVERDUE', 'RETURNED_LATE', 'SLDDP', 'ACCOUNTABILITY_REVIEW'], true) => 'attention',
         $requiresAction => 'action',
         $statusKey === 'ON_CUSTODY' => 'custody',
         in_array($statusKey, ['PICKUP_SCHEDULED', 'FOR_ISSUANCE', 'READY_FOR_PICKUP'], true) => 'approved',

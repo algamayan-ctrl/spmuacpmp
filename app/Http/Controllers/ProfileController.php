@@ -19,6 +19,7 @@ class ProfileController extends Controller
             'organizationalUnit',
             'authorizedOrganizationalUnits',
             'currentSignature.file',
+            'borrowerRegistration.validIdFile',
         ]);
 
         return view('profile.show', [

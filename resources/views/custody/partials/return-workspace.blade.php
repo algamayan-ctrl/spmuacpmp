@@ -146,6 +146,7 @@
                 @endif
             </div>
 
+            <x-borrower-identity :borrower="$custody->borrower" :version="$custody->requestVersion ?: $version" />
             <dl class="return-summary-grid">
                 <div class="return-summary-item">
                     <dt><x-icon name="requests" size="20" />Purpose / Event</dt>

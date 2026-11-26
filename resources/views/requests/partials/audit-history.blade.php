@@ -544,7 +544,7 @@
     </summary>
 
     <div class="table-wrap request-history-table-wrap">
-        <table class="request-history-table" data-record-table="Transaction history" data-record-filter-column="1" data-record-filter-label="Stage" data-record-dates>
+        <table class="request-history-table" data-record-table="Transaction history" data-record-controls="pagination">
             <colgroup>
                 <col class="request-history-col-when">
                 <col class="request-history-col-event">

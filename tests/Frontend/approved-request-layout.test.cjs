@@ -21,7 +21,7 @@ test('compact request layout is limited to SPMU custody records outside approval
 test('heading uses live request identity, workflow status and the existing custody route', () => {
     assert.match(heading, /\{\{ \$borrowingRequest->request_no \}\}/);
     assert.match(heading, /\{\{ \$v->purpose_event \}\}/);
-    assert.match(heading, /<x-status-badge :status="\$detailStatus" :label="\$detailStatusLabel"/);
+    assert.match(heading, /<x-status-badge :status="\$recordBadge\['key'\]" :label="\$recordBadge\['label'\]"/);
     assert.match(heading, /route\('custody\.show', \$borrowingRequest->custody\)/);
     assert.match(heading, /Open Custody Record/);
     assert.match(heading, /\$detailStatus === 'READY_FOR_RELEASE' => 'Proceed to physical release'/);
@@ -42,9 +42,10 @@ test('operational layout moves rather than duplicates the custody action', () =>
 });
 
 test('borrowing information and document rows retain live data and protected links', () => {
-    for (const field of ['full_name', 'unit_name', 'purpose_event', 'location', 'schedule_date', 'needed_from', 'return_date', 'return_due_at']) {
+    for (const field of ['full_name', 'affiliationLabel()', 'affiliationTypeLabel()', 'purpose_event', 'location', 'schedule_date', 'needed_from', 'return_date', 'return_due_at']) {
         assert.ok(details.includes(field), `Missing live field: ${field}`);
     }
+    assert.doesNotMatch(details, /borrower->organizationalUnit/);
     assert.match(details, /\$currentDocs->sortBy/);
     assert.match(details, /\$doc->version_no/);
     assert.match(details, /\$doc->verification_status/);

@@ -45,10 +45,14 @@ class SaoConfirmedCancellationTest extends TestCase
         $custody->update(['status' => $custodyStatus, 'closed_at' => now()]);
         $html = Blade::render('<x-request-progress-tracker :request="$request" />', ['request' => $request->fresh()]);
         $dom = new \DOMDocument;
-        @$dom->loadHTML($html);
+        @$dom->loadHTML('<?xml encoding="UTF-8">'.$html);
         $xpath = new \DOMXPath($dom);
-        $this->assertSame('Pending', $xpath->query('//*[@data-workflow-title="Completed"]/@data-workflow-meta')->item(0)->nodeValue);
-        $this->assertStringContainsString('cancelled', $xpath->query('//*[@data-workflow-title="Completed"]/@data-workflow-description')->item(0)->nodeValue);
+        // Full rail stays visible; a closing date is only cancellation metadata.
+        $this->assertSame(7, $xpath->query('//*[@data-workflow-title]')->length);
+        $this->assertSame(1, $xpath->query('//*[@data-workflow-title="Completed"]')->length);
+        $this->assertSame(0, $xpath->query('//*[@data-workflow-title="Cancelled"]')->length);
+        $this->assertSame('Not reached', $xpath->query('//*[@data-workflow-title="Completed"]/@data-workflow-meta')->item(0)->nodeValue);
+        $this->assertSame('Cancelled · '.now()->format('d M Y, g:i A'), $xpath->query('//li[contains(@class,"is-stopped")]//*[@data-workflow-title]/@data-workflow-meta')->item(0)->nodeValue);
         $this->assertStringNotContainsString('Transaction completed.', $html);
     }
 

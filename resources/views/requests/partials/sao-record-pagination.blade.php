@@ -56,8 +56,7 @@
         const term = search.value.trim().toLowerCase();
         const selectedStatus = status.value;
         const matches = rows.filter(row => {
-            const matchesStatus = selectedStatus === 'all'
-                || (selectedStatus === 'NEEDS_ATTENTION' ? row.dataset.attention === '1' : row.dataset.status === selectedStatus);
+            const matchesStatus = selectedStatus === 'all' || row.dataset.status === selectedStatus;
             return (!term || row.dataset.search.toLowerCase().includes(term)) && matchesStatus;
         }).sort((a, b) => (Number(b.dataset.created) - Number(a.dataset.created)) * (sort.value === 'newest' ? 1 : -1));
         const pageSize = getPageSize();

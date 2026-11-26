@@ -226,7 +226,7 @@ class MyBorrowingsListTest extends TestCase
     /** @return list<int> */
     private function ids(TestResponse $response): array
     {
-        return collect($response->viewData('custodies')->items())->pluck('id')->all();
+        return collect($response->viewData('borrowerRecords')->items())->pluck('custody.id')->all();
     }
 
     /* ------------------------------------------------------------------ */
@@ -259,14 +259,14 @@ class MyBorrowingsListTest extends TestCase
         $response = $this->myBorrowings($borrower);
         $response->assertOk()->assertDontSee($foreign->custody_no);
         $this->assertSame([$own->id], $this->ids($response));
-        $this->assertSame(1, $response->viewData('custodies')->total());
+        $this->assertSame(1, $response->viewData('borrowerRecords')->total());
 
         // Searching or filtering for the other borrower's record never reveals it.
         foreach ([
             ['search' => $foreign->custody_no],
             ['search' => 'Projector Foreign'],
-            ['status' => 'BORROWED'],
-            ['search' => $foreign->custody_no, 'status' => 'BORROWED'],
+            ['status' => 'ON_CUSTODY'],
+            ['search' => $foreign->custody_no, 'status' => 'ON_CUSTODY'],
         ] as $query) {
             // (The search box echoes the typed text back, so check the record
             // link and data rather than the raw custody number.)
@@ -294,8 +294,8 @@ class MyBorrowingsListTest extends TestCase
         foreach ([[1, 1, 7], [2, 8, 14], [3, 15, 21], [4, 22, 23]] as [$number, $first, $last]) {
             $response = $this->myBorrowings($borrower, ['page' => $number])->assertOk();
             $response->assertSee('Showing '.$first.' to '.$last.' of 23 borrowings');
-            $this->assertSame(23, $response->viewData('custodies')->total());
-            $this->assertSame(4, $response->viewData('custodies')->lastPage());
+            $this->assertSame(23, $response->viewData('borrowerRecords')->total());
+            $this->assertSame(4, $response->viewData('borrowerRecords')->lastPage());
             $this->assertCount($last - $first + 1, $this->ids($response));
             $allIds = array_merge($allIds, $this->ids($response));
             if ($number === 1) $this->assertSame($records->last()->id, $this->ids($response)[0]);
@@ -312,7 +312,7 @@ class MyBorrowingsListTest extends TestCase
         $this->myBorrowings($borrower)
             ->assertOk()
             ->assertSee('Showing 1 to 1 of 1 borrowing')
-            ->assertSee('7 items per page')
+            ->assertSee('7 entries')
             ->assertDontSee('aria-label="Pagination"', false);
     }
 
@@ -325,7 +325,7 @@ class MyBorrowingsListTest extends TestCase
 
         $response->assertOk()
             ->assertSee('Showing 1 to 23 of 23 borrowings')
-            ->assertSee('<option value="30" selected>30 items per page</option>', false);
+            ->assertSee('<option value="30" selected>30 entries</option>', false);
         $this->assertCount(23, $this->ids($response));
         $this->assertSame(30, $response->viewData('borrowerFilters')['per_page']);
     }
@@ -357,7 +357,7 @@ class MyBorrowingsListTest extends TestCase
             $response = $this->myBorrowings($borrower, ['search' => $term]);
             $response->assertOk();
             $this->assertSame([$target->id], $this->ids($response), "Search for [$term] should find only the target.");
-            $this->assertSame(1, $response->viewData('custodies')->total());
+            $this->assertSame(1, $response->viewData('borrowerRecords')->total());
         }
     }
 
@@ -406,8 +406,8 @@ class MyBorrowingsListTest extends TestCase
         $cancelled = $this->cancelledCustody($borrower);
 
         $expectations = [
-            'BORROWED' => [$borrowed->id],
-            'PICKUP_EXPIRED' => [$missedPickup->id],
+            'ON_CUSTODY' => [$borrowed->id],
+            'MISSED_PICKUP' => [$missedPickup->id],
             'COMPLETED' => [$completed->id],
             'CANCELLED' => [$cancelled->id],
         ];
@@ -418,8 +418,8 @@ class MyBorrowingsListTest extends TestCase
             $this->assertEqualsCanonicalizing($expectedIds, $this->ids($response), "Status filter [$status]");
 
             // Every returned row shows the badge the filter promised.
-            foreach ($response->viewData('custodies')->items() as $custody) {
-                $this->assertSame($status, $custody->borrowerListStatus()['key']);
+            foreach ($response->viewData('borrowerRecords')->items() as $custody) {
+                $this->assertSame($status, $custody->borrowerRecordStatus()['key']);
             }
         }
 
@@ -435,11 +435,11 @@ class MyBorrowingsListTest extends TestCase
         $borrower = $this->borrower();
         $overdue = $this->custody($borrower, ['status' => 'OVERDUE', 'due_at' => now()->subDay()]);
         $returning = $this->custody($borrower, ['status' => 'RETURN_PROCESSING']);
-        foreach (['OVERDUE' => $overdue, 'RETURN_PROCESSING' => $returning] as $status => $record) {
+        foreach (['OVERDUE' => $overdue, 'ON_CUSTODY' => $returning] as $status => $record) {
             $response = $this->myBorrowings($borrower, ['status' => $status])->assertOk();
             $this->assertSame([$record->id], $this->ids($response));
-            $response->assertSee('value="OVERDUE"', false)->assertSee('value="RETURN_PROCESSING"', false)
-                ->assertSee('value="ACCOUNTABILITY"', false);
+            $response->assertSee('value="OVERDUE"', false)->assertSee('value="ON_CUSTODY"', false)
+                ->assertSee('value="ACCOUNTABILITY_REVIEW"', false);
         }
     }
 
@@ -516,7 +516,7 @@ class MyBorrowingsListTest extends TestCase
         $wrongStatus = $this->completedCustody($borrower, ['item' => 'Sound System']);
         $wrongSearch = $this->custody($borrower, [], ['item' => 'Folding Table']);
 
-        $response = $this->myBorrowings($borrower, ['search' => 'sound system', 'status' => 'BORROWED']);
+        $response = $this->myBorrowings($borrower, ['search' => 'sound system', 'status' => 'ON_CUSTODY']);
 
         $response->assertOk();
         $this->assertSame([$match->id], $this->ids($response));
@@ -530,14 +530,14 @@ class MyBorrowingsListTest extends TestCase
         // Same item, different status: must never appear on any page.
         $this->completedCustody($borrower, ['item' => 'Event Tent']);
 
-        $query = ['search' => 'Event Tent', 'status' => 'BORROWED', 'sort' => 'oldest'];
+        $query = ['search' => 'Event Tent', 'status' => 'ON_CUSTODY', 'sort' => 'oldest'];
 
         $page1 = $this->myBorrowings($borrower, $query);
         $page1->assertOk()->assertSee('Showing 1 to 7 of 12 borrowings');
 
-        $nextUrl = $page1->viewData('custodies')->nextPageUrl();
+        $nextUrl = $page1->viewData('borrowerRecords')->nextPageUrl();
         $this->assertStringContainsString('search=Event%20Tent', $nextUrl);
-        $this->assertStringContainsString('status=BORROWED', $nextUrl);
+        $this->assertStringContainsString('status=ON_CUSTODY', $nextUrl);
         $this->assertStringContainsString('sort=oldest', $nextUrl);
         $this->assertStringContainsString('page=2', $nextUrl);
         $page1->assertSee(e($nextUrl), false);
@@ -546,7 +546,7 @@ class MyBorrowingsListTest extends TestCase
         $page2->assertOk()
             ->assertSee('Showing 8 to 12 of 12 borrowings')
             ->assertSee('value="Event Tent"', false)
-            ->assertSee('<option value="BORROWED" selected>', false)
+            ->assertSee('<option value="ON_CUSTODY" selected>', false)
             ->assertSee('<option value="oldest" selected>', false);
 
         // Oldest first: page 2 holds the five newest matching records.

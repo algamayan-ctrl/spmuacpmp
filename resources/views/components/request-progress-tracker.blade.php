@@ -93,7 +93,7 @@
     $submittedAt = $historyAt([
         'SUBMITTED',
         'UNDER_SPMU',
-    ]);
+    ]) ?: $request->currentVersion?->submitted_at;
 
     $reviewStartedAt =
         $historyAt(['UNDER_SPMU'])
@@ -116,11 +116,6 @@
     $returnStartedAt =
         $firstReturn?->received_at
         ?: $laundry?->worker_received_at;
-
-    // A cancellation closes custody without certifying a completed return.
-    $completedAt = $custodyStatus === 'CLOSED' && ! $isCancelled
-        ? $custody?->closed_at
-        : null;
 
     /*
     |--------------------------------------------------------------------------
@@ -162,14 +157,15 @@
         fn ($line) => ! (bool) $line->requestItem?->inventoryItem?->laundry_required
     );
 
-    $isClosed =
-        $custodyStatus === 'CLOSED' && ! $isCancelled;
+    // A closed custody row can still have outstanding documents or obligations.
+    $isClosed = ! $isCancelled
+        && ! in_array($statusValue, ['REJECTED', 'EXPIRED'], true)
+        && $custody?->workflowStatus()['key'] === 'COMPLETED';
+    $completedAt = $isClosed ? $custody?->closed_at : null;
 
     /*
-     * Accountability is a post-return branch, not another name for physical
-     * return processing. Once all issued quantities have been physically
-     * returned and an unresolved case exists, the tracker moves to a distinct
-     * Accountability step instead of staying on "Return Processing".
+     * Keep accountability requirements within the standard Return Processing
+     * point. Physical return alone does not certify transaction completion.
      */
     $activeAccountability = $custody?->activeAccountabilityIndicator();
     $obligationSummary = $activeAccountability ? $custody?->openObligationSummary() : null;
@@ -179,18 +175,6 @@
     $showAccountabilityStage = $physicalReturnComplete
         && $activeAccountability !== null
         && ! $isClosed;
-
-    $accountabilityIncident = $custody
-        ? ($custody->incidents ?? collect())
-            ->whereNotIn('status', ['RESOLVED', 'CLOSED', 'VOID_CORRECTION'])
-            ->sortByDesc(fn ($incident) => $incident->reported_at?->timestamp ?? $incident->id)
-            ->first()
-        : null;
-
-    $accountabilityStartedAt = $accountabilityIncident?->head_decided_at
-        ?: $accountabilityIncident?->reported_at
-        ?: $custody?->overdueCase?->overdue_started_at
-        ?: $returnStartedAt;
 
     $pickupExpired =
         (bool) $custody?->pickup_expired_at
@@ -220,13 +204,12 @@
     |
     */
 
-    $actionOfficerStepIndex = $requiresActionOfficerVerification ? 3 : null;
-    $headReviewStepIndex = $requiresActionOfficerVerification ? 4 : 3;
-    $pickupStepIndex = $requiresActionOfficerVerification ? 5 : 4;
-    $releaseStepIndex = $requiresActionOfficerVerification ? 6 : 5;
-    $returnStepIndex = $requiresActionOfficerVerification ? 7 : 6;
-    $accountabilityStepIndex = $showAccountabilityStage ? $returnStepIndex + 1 : null;
-    $completedStepIndex = $returnStepIndex + ($showAccountabilityStage ? 2 : 1);
+    $actionOfficerStepIndex = 3;
+    $headReviewStepIndex = 4;
+    $pickupStepIndex = 5;
+    $releaseStepIndex = 6;
+    $returnStepIndex = 7;
+    $completedStepIndex = 8;
 
     $reviewStepIndex = match (true) {
         $requiresActionOfficerVerification
@@ -243,7 +226,9 @@
     $currentIndex = match (true) {
         $isClosed => $completedStepIndex,
 
-        $showAccountabilityStage => $accountabilityStepIndex,
+        $showAccountabilityStage => $returnStepIndex,
+
+        $custodyStatus === 'CLOSED' => $returnStepIndex,
 
         $isReleased => $returnStepIndex,
 
@@ -389,31 +374,30 @@
         ],
     ];
 
-    if ($requiresActionOfficerVerification) {
-        $steps[$actionOfficerStepIndex] = [
-            'label' => 'Action Officer Verification',
-            'icon' => 'eye',
-            // No fallback to $reviewStartedAt here: until the Action Officer
-            // has actually received or decided on this step, it has not
-            // happened yet, so this must stay Pending rather than showing
-            // the (earlier) submission time as if it were this step's time.
-            'time' => $verificationStep?->decided_at ?: $verificationStep?->received_at,
-            'description' => match (true) {
-                $verificationStep?->decision === 'RETURNED_FOR_REVISION'
-                    => 'The Action Officer has requested corrections to the off-campus borrowing request.',
+    $steps[$actionOfficerStepIndex] = [
+        'label' => 'Action Officer Verification',
+        'icon' => 'eye',
+        'not_required' => ! $requiresActionOfficerVerification,
+        // Use only this review step's own event, never the submission time.
+        'time' => $requiresActionOfficerVerification
+            ? ($verificationStep?->decided_at ?: $verificationStep?->received_at)
+            : null,
+        'description' => match (true) {
+            ! $requiresActionOfficerVerification
+                => 'Not required for on-campus borrowing. The request goes directly to the SPMU Head / Admin.',
+            $verificationStep?->decision === 'RETURNED_FOR_REVISION'
+                => 'The Action Officer has requested corrections to the off-campus borrowing request.',
 
-                $verificationStep?->decision === 'VERIFIED'
-                    => 'Request verified by the SPMU Action Officer.',
+            $verificationStep?->decision === 'VERIFIED'
+                => 'Request verified by the SPMU Action Officer.',
 
-                $waitingForActionOfficer
-                    => 'The Action Officer will verify the off-campus borrowing request and its supporting documents.',
+            $waitingForActionOfficer
+                => 'The Action Officer will verify the off-campus borrowing request and its supporting documents.',
 
-                default
-                    => 'Off-campus borrowing requests require verification by the Action Officer.',
-            },
-        ];
-    }
-
+            default
+                => 'Off-campus borrowing requests require verification by the Action Officer.',
+        },
+    ];
     $steps[$headReviewStepIndex] = [
         'label' => 'SPMU Head Review',
         'icon' => 'success',
@@ -447,16 +431,6 @@
                 => 'The SPMU Head will review the request for approval.',
         },
     ];
-
-    if ($returnedForRevision && $headDecisionStep?->decision === 'RETURNED_FOR_REVISION') {
-        $steps[$headReviewStepIndex]['label'] = 'Revision Required';
-    }
-
-    if ($returnedForRevision
-        && $requiresActionOfficerVerification
-        && $verificationStep?->decision === 'RETURNED_FOR_REVISION') {
-        $steps[$actionOfficerStepIndex]['label'] = 'Revision Required';
-    }
 
     $steps[$pickupStepIndex] = [
         'label' => 'Pickup Scheduled',
@@ -512,11 +486,7 @@
     ];
 
     if ($showAccountabilityStage) {
-        $steps[$accountabilityStepIndex] = [
-            'label' => 'Accountability',
-            'icon' => 'warning',
-            'time' => $accountabilityStartedAt,
-            'description' => match ($obligationSummary['key'] ?? null) {
+        $steps[$returnStepIndex]['description'] = 'Physical return inspection recorded. '.match ($obligationSummary['key'] ?? null) {
                 'BILLING_ISSUED', 'RSLDDP_PAYMENT_REQUIRED'
                     => 'Settle the issued Billing Statement through the CSPC Cashier.',
                 'PAYMENT_VERIFICATION'
@@ -545,8 +515,7 @@
                     => 'SPMU is reviewing the Laundry Form and linen return records.',
                 default
                     => 'Outstanding accountability requirements must be settled before completion.',
-            },
-        ];
+            };
     }
 
     $steps[$completedStepIndex] = [
@@ -561,30 +530,23 @@
                     : 'The transaction will be completed after all return requirements are met.'),
     ];
 
-    /*
-     * A cancellation is an outcome, not a replacement for the last completed
-     * milestone. Keep the actual history visible, then end the rail with one
-     * red Cancelled step. Future stages are intentionally omitted because
-     * they never happened.
-     */
+    // Terminal outcomes annotate the actual standard phase; never truncate
+    // the rail or rename a phase to Cancelled / Rejected.
+    $stoppedLabel = $isCancelled ? 'Cancelled' : ($statusValue === 'REJECTED' ? 'Rejected' : 'Expired');
+    $stoppedAt = null;
     if ($isCancelled) {
-        $lastReachedIndex = match (true) {
-            $isReleased && $returnStartedAt => $returnStepIndex,
-            $isReleased => $releaseStepIndex,
-            (bool) $pickupScheduledAt => $pickupStepIndex,
-            $isApproved => $headReviewStepIndex,
+        $cancelledFromStatus = $history->where('to_status', 'CANCELLED')->sortByDesc('changed_at')->first()?->from_status;
+        $currentIndex = match (true) {
+            $isReleased => $returnStepIndex,
+            (bool) $custody?->pickup_expired_at => $pickupStepIndex,
+            $hasActivePickupSchedule => $releaseStepIndex,
+            $isApproved => $pickupStepIndex,
+            ! $submittedAt && in_array($cancelledFromStatus, ['DRAFT', 'SIGNED'], true) => 2,
             $requiresActionOfficerVerification
-                && $verificationStep?->decision === 'VERIFIED' => $actionOfficerStepIndex,
-            default => 2,
+                && ! in_array($verificationStep?->decision, ['VERIFIED', 'APPROVED'], true) => $actionOfficerStepIndex,
+            default => $headReviewStepIndex,
         };
-
-        $steps = array_filter(
-            $steps,
-            static fn (array $_step, int $index): bool => $index <= $lastReachedIndex,
-            ARRAY_FILTER_USE_BOTH
-        );
-
-        $cancelledStepIndex = $lastReachedIndex + 1;
+        $stoppedAt = $cancellationAt;
         $cancellationDescription = $cancellationActorName
             ? 'Cancelled by '.$cancellationActorName.'. '
             : 'This borrowing was cancelled. ';
@@ -592,30 +554,22 @@
             ? 'Reason: '.$cancellationReason
             : 'No cancellation reason was recorded.';
 
-        $steps[$cancelledStepIndex] = [
-            'label' => 'Cancelled',
-            'icon' => 'error',
-            'time' => $cancellationAt,
-            'description' => $cancellationDescription,
-        ];
-
-        $currentIndex = $cancelledStepIndex;
+        $steps[$currentIndex]['description'] = $cancellationDescription;
     }
 
     /*
-     * Rejection is terminal at the review stage. Like cancellation, retain
-     * only the genuine history rather than displaying later stages that can
-     * no longer happen.
+     * Read the rejecting decision so a legacy Officer rejection is displayed
+     * at verification instead of being attributed to the Head.
      */
     if ($statusValue === 'REJECTED') {
-        $steps = array_filter(
-            $steps,
-            static fn (array $_step, int $index): bool => $index <= $reviewStepIndex,
-            ARRAY_FILTER_USE_BOTH
-        );
-        $steps[$reviewStepIndex]['label'] = 'Rejected';
-        $steps[$reviewStepIndex]['icon'] = 'error';
-        $currentIndex = $reviewStepIndex;
+        $rejectionStep = $approvalSteps->where('decision', 'REJECTED')->sortByDesc('decided_at')->first();
+        $currentIndex = $requiresActionOfficerVerification && $rejectionStep?->sequence_no === 1
+            ? $actionOfficerStepIndex : $headReviewStepIndex;
+        $stoppedAt = $rejectionStep?->decided_at ?: $historyAt(['REJECTED']);
+        $steps[$currentIndex]['description'] = 'Request rejected at this stage.'
+            .($rejectionStep?->remarks ? ' Reason: '.$rejectionStep->remarks : '');
+    } elseif ($statusValue === 'EXPIRED' && ! $isCancelled) {
+        $stoppedAt = $historyAt(['EXPIRED']);
     }
 
     ksort($steps);
@@ -644,8 +598,8 @@
     };
 
     $trackerIntro =
-        $isCancelled
-            ? 'The tracker ends at the point where this borrowing was cancelled.'
+        $terminal
+            ? 'The tracker shows where the transaction stopped and the stages it did not reach.'
             : ($returnedForRevision
                 ? 'The request was reviewed and returned for correction.'
                 : ($isClosed
@@ -751,6 +705,7 @@
 
 <section
     class="content-area request-tracker-card"
+    data-transaction-tracker
     aria-labelledby="request-progress-title"
 >
     <article class="card request-tracker">
@@ -855,7 +810,11 @@
                          * Completed transaction:
                          * everything becomes green/completed.
                          */
-                        if ($isClosed) {
+                        if ($step['not_required'] ?? false) {
+
+                            $stepState = 'is-not-required';
+
+                        } elseif ($isClosed) {
 
                             $stepState = 'is-complete';
 
@@ -901,6 +860,21 @@
 
                         }
 
+                        $stepTime = $stepState === 'is-not-required' ? null : $step['time'];
+                        $stepDescription = $step['description'];
+                        if ($stepState === 'is-stopped') {
+                            $stepTime = $stoppedAt;
+                            $stepMeta = $stoppedLabel.($stepTime ? ' · '.$formatDateTime($stepTime) : ' · Date not recorded');
+                        } elseif ($stepState === 'is-not-required') {
+                            $stepMeta = 'Not required';
+                        } elseif ($terminal && $stepState === 'is-pending') {
+                            $stepTime = null;
+                            $stepMeta = 'Not reached';
+                            $stepDescription = 'This stage was not reached before the transaction was '.strtolower($stoppedLabel).'.';
+                        } else {
+                            $stepMeta = $stepTime ? $formatDateTime($stepTime)
+                                : ($stepState === 'is-complete' ? 'Date not recorded' : 'Pending');
+                        }
                     @endphp
 
 
@@ -908,6 +882,7 @@
                         class="
                             request-tracker__step
                             {{ $stepState }}
+                            {{ $stepState === 'is-not-required' && ($isClosed || $index < $currentIndex) ? 'is-passed' : '' }}
                         "
 
                         @if(
@@ -975,31 +950,30 @@
                             class="request-tracker__copy workflow-tracker__interactive"
                             data-workflow-step
                             data-workflow-title="{{ $step['label'] }}"
-                            data-workflow-meta="{{ $step['time'] ? $formatDateTime($step['time']) : 'Pending' }}"
-                            data-workflow-description="{{ $step['description'] }}"
+                            data-workflow-meta="{{ $stepMeta }}"
+                            data-workflow-description="{{ $stepDescription }}"
                             tabindex="0"
-                            aria-label="{{ $step['label'] }}. {{ $step['time'] ? $formatDateTime($step['time']) : 'Pending' }}. {{ $step['description'] }}"
+                            aria-label="{{ $step['label'] }}. {{ $stepMeta }}. {{ $stepDescription }}"
                         >
 
                             <strong>
                                 {{ $step['label'] }}
                             </strong>
 
+                            @if($stepState === 'is-not-required' || $stepState === 'is-stopped')
+                                <span class="request-tracker__state-label">{{ $stepState === 'is-stopped' ? $stoppedLabel : 'Not required' }}</span>
+                            @endif
 
-                            @if($step['time'])
+                            @if($stepTime)
 
                                 <time
                                     datetime="{{
-                                        $step['time']
+                                        $stepTime
                                             ->toIso8601String()
                                     }}"
                                 >
 
-                                    {{
-                                        $formatDateTime(
-                                            $step['time']
-                                        )
-                                    }}
+                                    {{ $stepMeta }}
 
                                 </time>
 
@@ -1010,7 +984,7 @@
                                         request-tracker__pending-label
                                     "
                                 >
-                                    Pending
+                                    {{ $stepMeta }}
                                 </span>
 
                             @endif

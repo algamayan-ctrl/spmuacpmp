@@ -163,7 +163,8 @@
         </div>
 
     </div>
-<div class="student-activity-panel">
+@if(!$isExternalBorrower)
+    <div class="student-activity-panel">
         <input type="hidden" name="represents_student_activity" value="0">
         <label class="checkbox" for="student-activity-toggle">
             <input
@@ -180,6 +181,7 @@
             </span>
         </label>
     </div>
+@endif
 
     <div class="stage-actions request-details-actions" data-stage-panel="1">
         <button type="button" class="button primary ui-pressable" data-stage-next="2" disabled>

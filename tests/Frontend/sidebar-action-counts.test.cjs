@@ -14,8 +14,8 @@ test('Borrower sidebar badges match the unfiltered My Requests and My Borrowings
   const borrowerCountsEnd = service.indexOf('public function tones', borrowerCountsStart);
   const borrowerCounts = service.slice(borrowerCountsStart, borrowerCountsEnd);
 
-  assert.match(borrowerCounts, /BorrowingRequest::query\(\)[\s\S]*?where\('borrower_user_id', \$userId\)[\s\S]*?->count\(\)/);
-  assert.match(borrowerCounts, /CustodyTransaction::query\(\)[\s\S]*?where\('borrower_user_id', \$userId\)[\s\S]*?->count\(\)/);
+  assert.match(borrowerCounts, /\$lists->ongoingCount\(\$userId\)/);
+  assert.match(borrowerCounts, /\$lists->query\(\$userId, false\)->count\(\)/);
   assert.doesNotMatch(borrowerCounts, /whereNotIn\('status', \['CLOSED', 'CANCELLED'\]\)/);
   assert.doesNotMatch(borrowerCounts, /RequestStatus::Draft/);
 });

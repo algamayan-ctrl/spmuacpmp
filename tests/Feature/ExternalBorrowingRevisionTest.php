@@ -43,7 +43,7 @@ class ExternalBorrowingRevisionTest extends TestCase
 
     public static function activityCases(): array
     {
-        return ['regular' => [false], 'conditional PTC' => [true]];
+        return ['external regular' => [false]];
     }
 
     #[DataProvider('activityCases')]
@@ -158,17 +158,22 @@ class ExternalBorrowingRevisionTest extends TestCase
     }
 
     #[DataProvider('activityCases')]
-    public function test_returned_form_keeps_old_previews_but_requires_fresh_uploads_for_the_new_version(bool $activity): void
+    public function test_returned_evidence_remains_previewable_while_the_form_requires_fresh_uploads(bool $activity): void
     {
         $request = $this->submitted($activity);
         $documents = $request->currentVersion->supportingDocuments()->get();
         $this->returnBySao($request);
         $response = $this->as($request->borrower, 'BORROWER')->get(route('requests.edit', $request))->assertOk();
-        $response->assertSee('Previous version:')
+        $response->assertSeeText('Upload a new corrected, signed borrowing request letter to submit this revision.')
             ->assertSee('const requestLetterAlreadyUploaded = false;', false)
             ->assertSee('const ptcAlreadyUploaded = false;', false);
+        $details = $this->as($request->borrower, 'BORROWER')->get(route('requests.show', $request))->assertOk();
         foreach ($documents as $document) {
-            $response->assertSee(route('files.preview', $document->file), false);
+            // The existing form intentionally hides old attachments while asking
+            // for corrected uploads. Their previews remain in request details.
+            $response->assertDontSee(route('files.preview', $document->file), false);
+            $details->assertSee(route('files.preview', $document->file), false);
+            $this->get(route('files.preview', $document->file))->assertOk();
         }
         $this->assertReturnedOriginal($request);
     }
@@ -209,17 +214,17 @@ class ExternalBorrowingRevisionTest extends TestCase
 
     public static function missingCorrections(): array
     {
-        return ['fresh letter' => ['approved_request_letter'], 'conditional fresh PTC' => ['permission_to_conduct_letter'],
+        return ['fresh letter' => ['approved_request_letter'],
             'E-sign consent' => ['confirm_e_signature'], 'acknowledgement' => ['borrower_acknowledgement']];
     }
 
     #[DataProvider('missingCorrections')]
     public function test_missing_required_correction_input_does_not_reuse_old_evidence_or_commit_a_version(string $field): void
     {
-        $request = $this->submitted(true);
+        $request = $this->submitted();
         $this->returnBySao($request);
         $beforeFiles = Storage::disk('local')->allFiles();
-        $payload = $this->payload(true, true) + $this->documents(true, 'missing');
+        $payload = $this->payload(false, true) + $this->documents(false, 'missing');
         unset($payload[$field]);
         $this->as($request->borrower, 'BORROWER')->put(route('requests.update', $request), $payload)->assertSessionHasErrors($field);
         $this->assertReturnedOriginal($request);
@@ -229,24 +234,24 @@ class ExternalBorrowingRevisionTest extends TestCase
 
     public function test_saved_unsigned_correction_is_resumed_and_signed_once_without_creating_version_three(): void
     {
-        $request = $this->submitted(true);
+        $request = $this->submitted();
         $this->returnBySao($request);
-        $this->as($request->borrower, 'BORROWER')->put(route('requests.update', $request), $this->payload(true, false))->assertSessionHasNoErrors();
+        $this->as($request->borrower, 'BORROWER')->put(route('requests.update', $request), $this->payload(false, false))->assertSessionHasNoErrors();
         $current = $request->fresh()->currentVersion;
         $this->assertSame(2, $current->version_no);
         $this->assertNull($current->signed_at);
         $this->assertSame(0, $current->supportingDocuments()->count());
         $this->get(route('requests.edit', $request))->assertOk()->assertSee('Reviewed External Agency');
-        $this->put(route('requests.update', $request), $this->payload(true, true) + $this->documents(true, 'resumed'))->assertSessionHasNoErrors();
+        $this->put(route('requests.update', $request), $this->payload(false, true) + $this->documents(false, 'resumed'))->assertSessionHasNoErrors();
         $this->assertSame(2, $request->versions()->count());
         $this->assertSame($current->id, $request->fresh()->currentVersion->id);
         $this->assertDatabaseCount('signature_snapshots', 2);
         $stale = $request->fresh();
-        $this->put(route('requests.update', $request), $this->payload(true, true) + $this->documents(true, 'duplicate'))->assertRedirect()
+        $this->put(route('requests.update', $request), $this->payload(false, true) + $this->documents(false, 'duplicate'))->assertRedirect()
             ->assertSessionHas('status', fn ($message) => str_contains($message, 'already completed'));
         $this->assertSame(2, $request->versions()->count());
         Cache::flush();
-        $this->put(route('requests.update', $request), $this->payload(true, true) + $this->documents(true, 'direct-stale'))->assertForbidden();
+        $this->put(route('requests.update', $request), $this->payload(false, true) + $this->documents(false, 'direct-stale'))->assertForbidden();
         $this->assertSame(2, $request->versions()->count());
         $this->assertSame('RECEIVED', $stale->currentVersion->approvalSteps()->sole()->decision);
         $this->assertNoAllocation();
@@ -314,7 +319,7 @@ class ExternalBorrowingRevisionTest extends TestCase
     #[DataProvider('correctionFailures')]
     public function test_failed_atomic_correction_removes_only_new_files_and_retains_original_evidence(string $failure): void
     {
-        $request = $this->submitted(true);
+        $request = $this->submitted();
         $this->returnBySao($request);
         $beforeFiles = Storage::disk('local')->allFiles();
         $beforeMetadata = StoredFile::count();
@@ -332,7 +337,7 @@ class ExternalBorrowingRevisionTest extends TestCase
             $realFiles = app(ProtectedFileService::class);
             $uploads = 0;
             $this->mock(ProtectedFileService::class)->shouldReceive('storeUpload')->andReturnUsing(function (...$args) use ($realFiles, &$uploads) {
-                if (++$uploads === 2) {
+                if (++$uploads === 1) {
                     throw new \RuntimeException('Synthetic correction failure');
                 }
 
@@ -341,7 +346,7 @@ class ExternalBorrowingRevisionTest extends TestCase
         }
         $this->as($request->borrower, 'BORROWER')->withoutExceptionHandling();
         try {
-            $this->put(route('requests.update', $request), $this->payload(true, true) + $this->documents(true, 'failed'));
+            $this->put(route('requests.update', $request), $this->payload(false, true) + $this->documents(false, 'failed'));
             $this->fail('Correction must roll back.');
         } catch (\RuntimeException $exception) {
             $this->assertSame('Synthetic correction failure', $exception->getMessage());

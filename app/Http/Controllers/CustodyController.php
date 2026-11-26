@@ -9,10 +9,12 @@ use App\Models\CustodyTransaction;
 use App\Models\Incident;
 use App\Models\NotificationEvent;
 use App\Models\Penalty;
+use App\Services\BorrowerRecordListService;
 use App\Services\CustodyService;
 use App\Services\OperationalCalendarService;
 use App\Services\ProtectedFileService;
 use App\Services\RequestWorkflowService;
+use App\Support\RequestRecordStatus;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -43,34 +45,7 @@ class CustodyController extends Controller
      */
     private const HEAD_KPI_FILTERS = ['active_custodies'];
 
-    /** Default records per page on the borrower's My Borrowings list. */
-    private const BORROWER_PER_PAGE = 7;
-
-    /** Page-size choices shown in the My Borrowings footer. */
-    private const BORROWER_PER_PAGE_OPTIONS = [7, 15, 30, 50];
-
-    /** Longest search term accepted from the My Borrowings search box. */
-    private const BORROWER_SEARCH_MAX_LENGTH = 100;
-
-    /**
-     * Keep My Borrowings focused on the few outcomes a borrower needs to
-     * find. More detailed operational states remain visible in each record.
-     */
-    public const BORROWER_STATUS_FILTERS = [
-        'PICKUP_EXPIRED' => 'Pickup Missed',
-        'BORROWED' => 'On Custody',
-        'OVERDUE' => 'Overdue',
-        'RETURN_PROCESSING' => 'Return Processing',
-        'ACCOUNTABILITY' => 'Open Accountability',
-        'COMPLETED' => 'Completed',
-        'CANCELLED' => 'Cancelled',
-    ];
-
-    /** Sort options on My Borrowings. Only these values reach ORDER BY. */
-    private const BORROWER_SORTS = [
-        'newest' => 'desc',
-        'oldest' => 'asc',
-    ];
+    public const BORROWER_STATUS_FILTERS = RequestRecordStatus::FILTERS;
 
     public function index(Request $request): View|RedirectResponse
     {
@@ -78,217 +53,58 @@ class CustodyController extends Controller
             return redirect()->route('requests.index', $request->query('kpi') === 'active_custodies'
                 ? ['kpi' => 'active_custodies'] : []);
         }
-        $query = CustodyTransaction::with(['borrower.organizationalUnit', 'request.currentVersion', 'lines.requestItem.inventoryItem', 'laundryJob.latestEvidence.file', 'incidents', 'overdueCase'])->latest();
-        $isBorrower = strtoupper((string) $request->session()->get('active_workspace')) === 'BORROWER';
-        $borrowerKpiFilter = null;
-        $headKpiFilter = null;
-
-        if ($isBorrower) {
-            // Ownership restriction: a borrower only ever sees their own records.
-            $query->where('borrower_user_id', $request->user()->id);
-
-            $requestedKpi = (string) $request->query('kpi', '');
-
-            if (in_array($requestedKpi, self::BORROWER_KPI_FILTERS, true)) {
-                $borrowerKpiFilter = $requestedKpi;
-
-                match ($borrowerKpiFilter) {
-                    'active_borrowings' => $query
-                        ->whereNotIn('status', ['CLOSED', 'CANCELLED'])
-                        ->whereNotNull('released_at')
-                        ->whereHas('lines', fn ($line) => $line
-                            ->whereColumn('returned_quantity', '<', 'actual_released_quantity')),
-                    'upcoming_pickup' => $query
-                        ->whereNull('released_at')
-                        ->whereNotNull('scheduled_release_at')
-                        ->whereNull('pickup_expired_at')
-                        ->where(function ($q) {
-                            $q->whereNull('pickup_expires_at')
-                                ->orWhere('pickup_expires_at', '>=', now());
-                        }),
-                    'returns_due' => $query
-                        ->whereNotIn('status', ['CLOSED', 'CANCELLED', 'OVERDUE'])
-                        ->whereNotNull('released_at')
-                        ->whereNotNull('due_at')
-                        ->whereHas('lines', fn ($line) => $line
-                            ->whereColumn('returned_quantity', '<', 'actual_released_quantity'))
-                        ->whereBetween('due_at', [now()->startOfDay(), now()->addDay()->endOfDay()]),
-                };
+        if (strtoupper((string) $request->session()->get('active_workspace')) === 'BORROWER') {
+            $lists = app(BorrowerRecordListService::class);
+            $query = $lists->query((int) $request->user()->id, false);
+            $filters = $lists->filters($request, false);
+            $kpi = $request->query('kpi');
+            $borrowerKpiFilter = in_array($kpi, self::BORROWER_KPI_FILTERS, true) ? $kpi : null;
+            if ($borrowerKpiFilter) {
+                $query->whereHas('custody', function ($custody) use ($borrowerKpiFilter): void {
+                    match ($borrowerKpiFilter) {
+                        'active_borrowings' => $custody
+                            ->whereNotIn('status', ['CLOSED', 'CANCELLED'])
+                            ->whereNotNull('released_at')
+                            ->whereHas('lines', fn ($line) => $line
+                                ->whereColumn('returned_quantity', '<', 'actual_released_quantity')),
+                        'upcoming_pickup' => $custody
+                            ->whereNull('released_at')->whereNotNull('scheduled_release_at')
+                            ->whereNull('pickup_expired_at')
+                            ->where(fn ($q) => $q->whereNull('pickup_expires_at')->orWhere('pickup_expires_at', '>=', now())),
+                        'returns_due' => $custody
+                            ->whereNotIn('status', ['CLOSED', 'CANCELLED', 'OVERDUE'])
+                            ->whereNotNull('released_at')->whereNotNull('due_at')
+                            ->whereHas('lines', fn ($line) => $line
+                                ->whereColumn('returned_quantity', '<', 'actual_released_quantity'))
+                            ->whereBetween('due_at', [now()->startOfDay(), now()->addDay()->endOfDay()]),
+                    };
+                });
             }
-        } else {
-            $requestedKpi = (string) $request->query('kpi', '');
-
-            if (in_array($requestedKpi, self::HEAD_KPI_FILTERS, true)) {
-                $headKpiFilter = $requestedKpi;
-
-                $query->whereNotNull('released_at')
-                    ->whereNotIn('status', ['CLOSED', 'CANCELLED']);
-            }
-        }
-
-        if ($isBorrower) {
-            $filters = $this->borrowerListFilters($request);
-
-            $this->applyBorrowerSearch($query, $filters['search']);
-            $this->applyBorrowerStatusFilter($query, $filters['status']);
-
-            $query->reorder()
-                ->orderBy('custody_transactions.updated_at', self::BORROWER_SORTS[$filters['sort']])
-                ->orderBy('custody_transactions.id', self::BORROWER_SORTS[$filters['sort']]);
+            $lists->apply($query, $filters, false);
 
             return view('custody.index', [
-                'custodies' => $query->paginate($filters['per_page'])->withQueryString(),
+                'borrowerRecords' => $query->paginate($filters['per_page'])->withQueryString(),
                 'borrowerKpiFilter' => $borrowerKpiFilter,
-                'headKpiFilter' => $headKpiFilter,
+                'headKpiFilter' => null,
                 'borrowerFilters' => $filters,
                 'borrowerStatusFilters' => self::BORROWER_STATUS_FILTERS,
-                'borrowerPerPageOptions' => self::BORROWER_PER_PAGE_OPTIONS,
+                'borrowerPerPageOptions' => BorrowerRecordListService::PER_PAGE_OPTIONS,
             ]);
+        }
+
+        // Staff operational lists retain their custody-based source and scope.
+        $query = CustodyTransaction::with(['borrower.organizationalUnit', 'request.currentVersion', 'lines.requestItem.inventoryItem', 'laundryJob.latestEvidence.file', 'incidents', 'overdueCase'])->latest();
+        $kpi = $request->query('kpi');
+        $headKpiFilter = in_array($kpi, self::HEAD_KPI_FILTERS, true) ? $kpi : null;
+        if ($headKpiFilter) {
+            $query->whereNotNull('released_at')->whereNotIn('status', ['CLOSED', 'CANCELLED']);
         }
 
         return view('custody.index', [
             'custodies' => $query->get(),
-            'borrowerKpiFilter' => $borrowerKpiFilter,
+            'borrowerKpiFilter' => null,
             'headKpiFilter' => $headKpiFilter,
         ]);
-    }
-
-    /**
-     * Read the My Borrowings search/status/sort query values. Anything not
-     * in the allowed lists falls back to the default instead of erroring, so
-     * an old bookmark or a hand-edited URL still opens the page.
-     *
-     * @return array{search:string,status:string,sort:string,per_page:int,active:bool}
-     */
-    private function borrowerListFilters(Request $request): array
-    {
-        // Only plain string values count; arrays such as ?status[]=x fall back
-        // to the default instead of causing a server error.
-        $stringQuery = function (string $key, string $default) use ($request): string {
-            $value = $request->query($key, $default);
-
-            return is_string($value) ? $value : $default;
-        };
-
-        $search = trim($stringQuery('search', ''));
-        $search = mb_substr($search, 0, self::BORROWER_SEARCH_MAX_LENGTH);
-
-        $status = strtoupper(trim($stringQuery('status', '')));
-        $status = array_key_exists($status, self::BORROWER_STATUS_FILTERS) ? $status : 'all';
-
-        $sort = $stringQuery('sort', 'newest');
-        $sort = array_key_exists($sort, self::BORROWER_SORTS) ? $sort : 'newest';
-
-        $perPage = (int) $stringQuery('per_page', (string) self::BORROWER_PER_PAGE);
-        $perPage = in_array($perPage, self::BORROWER_PER_PAGE_OPTIONS, true)
-            ? $perPage
-            : self::BORROWER_PER_PAGE;
-
-        return [
-            'search' => $search,
-            'status' => $status,
-            'sort' => $sort,
-            'per_page' => $perPage,
-            'active' => $search !== '' || $status !== 'all',
-        ];
-    }
-
-    /**
-     * Search the borrower-visible identifiers: custody no., request no.,
-     * the request's purpose/event, and the names of the borrowed items.
-     */
-    private function applyBorrowerSearch($query, string $search): void
-    {
-        if ($search === '') {
-            return;
-        }
-
-        $term = '%'.addcslashes($search, '%_\\').'%';
-
-        $query->where(function ($match) use ($term): void {
-            $match->where('custody_transactions.custody_no', 'like', $term)
-                ->orWhereHas('request', fn ($request) => $request
-                    ->where('request_no', 'like', $term))
-                ->orWhereHas('request.currentVersion', fn ($version) => $version
-                    ->where('purpose_event', 'like', $term))
-                ->orWhereHas('lines.requestItem', fn ($item) => $item
-                    ->where('description_snapshot', 'like', $term));
-            if (\Illuminate\Support\Facades\Schema::hasTable('request_number_aliases')) {
-                $match->orWhereHas('request.numberAliases', fn ($aliases) => $aliases->where('alias', 'like', $term));
-            }
-        });
-    }
-
-    /**
-     * Server-side status filter that always agrees with the row badge.
-     *
-     * The badge comes from CustodyTransaction::borrowerListStatus(), which
-     * depends on incidents, billing, gate pass, and laundry state as well as
-     * the custody columns. So the filter runs in two steps:
-     *  1. a SQL pre-filter on the custody columns narrows the candidates to
-     *     records that could possibly show that badge;
-     *  2. each candidate is checked with the same status method the badge
-     *     uses, and only the matching ids go on to pagination.
-     */
-    private function applyBorrowerStatusFilter($query, string $status): void
-    {
-        if ($status === 'all') {
-            return;
-        }
-
-        $returnStatuses = ['RETURN_PROCESSING', 'PARTIALLY_RETURNED', 'EARLY_RETURN'];
-        $notCancelled = fn ($q) => $q->where('custody_transactions.status', '!=', 'CANCELLED')
-            ->whereHas('request', fn ($request) => $request->where('status', '!=', 'CANCELLED'));
-
-        $candidates = (clone $query)->reorder();
-
-        match ($status) {
-            'CANCELLED' => $candidates->where(fn ($q) => $q
-                ->where('custody_transactions.status', 'CANCELLED')
-                ->orWhereHas('request', fn ($request) => $request->where('status', 'CANCELLED'))),
-            'OVERDUE' => $notCancelled($candidates)->where('custody_transactions.status', 'OVERDUE'),
-            'RETURN_PROCESSING' => $notCancelled($candidates)->whereIn('custody_transactions.status', $returnStatuses),
-            'COMPLETED', 'BORROWER_CLEARED' => $notCancelled($candidates)->where('custody_transactions.status', 'CLOSED'),
-            'PICKUP_SCHEDULING', 'ITEM_PREPARATION', 'PICKUP_SCHEDULED', 'READY_FOR_RELEASE', 'PICKUP_EXPIRED' => $notCancelled($candidates)
-                ->where('custody_transactions.status', 'PREPARING_RELEASE')
-                ->whereNull('custody_transactions.released_at'),
-            'BORROWED' => $notCancelled($candidates)
-                ->whereNotNull('custody_transactions.released_at')
-                ->whereNotIn('custody_transactions.status', ['CLOSED', 'OVERDUE', ...$returnStatuses]),
-            // Accountability, gate pass, and linen badges can come from several
-            // stored statuses, but never from overdue or in-progress returns.
-            default => $notCancelled($candidates)
-                ->whereNotIn('custody_transactions.status', ['OVERDUE', ...$returnStatuses]),
-        };
-
-        $matchingIds = [];
-
-        $candidates
-            ->setEagerLoads([])
-            ->with(['request','lines.requestItem.inventoryItem', 'laundryJob.latestEvidence.file', 'incidents', 'gatePass'])
-            ->lazyById(200, 'custody_transactions.id', 'id')
-            ->each(function (CustodyTransaction $custody) use ($status, &$matchingIds): void {
-                if ($this->borrowerStatusMatches($custody->borrowerListStatus(), $status)) {
-                    $matchingIds[] = $custody->id;
-                }
-            });
-
-        $query->whereIn('custody_transactions.id', $matchingIds);
-    }
-
-    /**
-     * @param  array{key:string,label:string,group:string}  $rowStatus
-     */
-    private function borrowerStatusMatches(array $rowStatus, string $filter): bool
-    {
-        return match ($filter) {
-            // Every accountability/obligation badge except physical states,
-            // gate pass, and linen, which each have their own option.
-            'ACCOUNTABILITY' => $rowStatus['group'] === 'attention'
-                && ! in_array($rowStatus['key'], ['OVERDUE', 'GATE_PASS_PENDING', 'GATE_PASS_PROCESSING', 'LINEN_PENDING'], true),
-            'GATE_PASS_PROCESSING' => in_array($rowStatus['key'], ['GATE_PASS_PROCESSING', 'GATE_PASS_PENDING'], true),
-            default => $rowStatus['key'] === $filter,
-        };
     }
 
     public function releaseIndex(Request $request): View
@@ -391,6 +207,7 @@ class CustodyController extends Controller
 
         $relations = [
             'borrower',
+            'requestVersion.request.accountableUnit',
             'request.currentVersion.approvalSteps',
             'request.statusHistory',
             'request.latestCancellation.requestedBy',

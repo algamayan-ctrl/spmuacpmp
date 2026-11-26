@@ -333,6 +333,7 @@ class RequestWorkflowService
                         'is_current',
                         true
                     )
+                    ->when($version->isExternalAffiliation(), fn ($query) => $query->where('document_type', '!=', RequestSupportingDocument::TYPE_PERMISSION_TO_CONDUCT))
                     ->update([
                         'verification_status' =>
                             RequestSupportingDocument::STATUS_PENDING,
@@ -1889,6 +1890,7 @@ class RequestWorkflowService
                     'is_current',
                     true
                 )
+                ->when($version->isExternalAffiliation(), fn ($query) => $query->where('document_type', '!=', RequestSupportingDocument::TYPE_PERMISSION_TO_CONDUCT))
                 ->with('file')
                 ->get();
 
@@ -1919,7 +1921,7 @@ class RequestWorkflowService
         }
 
         if (
-            $version->represents_student_activity
+            $version->requiresPermissionToConduct()
         ) {
             $hasPermission =
                 $documents->contains(
@@ -1955,6 +1957,7 @@ class RequestWorkflowService
                 'is_current',
                 true
             )
+            ->when($version->isExternalAffiliation(), fn ($query) => $query->where('document_type', '!=', RequestSupportingDocument::TYPE_PERMISSION_TO_CONDUCT))
             ->update([
                 'verification_status' =>
                     $status,

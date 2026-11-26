@@ -37,7 +37,7 @@
         Status
 
         <select id="request-status-filter" name="status">
-            <option value="all">All statuses</option>
+            <option value="all">All ongoing statuses</option>
             @foreach($borrowerRequestStatusFilters as $statusKey => $statusLabel)
                 <option value="{{ $statusKey }}" @selected($borrowerRequestFilters['status'] === $statusKey)>{{ $statusLabel }}</option>
             @endforeach

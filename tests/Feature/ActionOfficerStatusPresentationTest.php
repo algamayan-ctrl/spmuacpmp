@@ -24,6 +24,24 @@ class ActionOfficerStatusPresentationTest extends TestCase
 {
     use RefreshDatabase;
 
+    private const RECORD_STATUSES = [
+        'all' => 'All statuses',
+        'FOR_APPROVAL' => 'For Approval',
+        'NEEDS_REVISION' => 'Needs Revision',
+        'PICKUP_SCHEDULED' => 'Pickup Scheduled',
+        'FOR_ISSUANCE' => 'For Issuance',
+        'READY_FOR_PICKUP' => 'Ready for Pickup',
+        'MISSED_PICKUP' => 'Missed Pickup',
+        'ON_CUSTODY' => 'On Custody',
+        'OVERDUE' => 'Overdue',
+        'RETURNED_LATE' => 'Returned Late',
+        'SLDDP' => 'SLDDP',
+        'ACCOUNTABILITY_REVIEW' => 'Accountability Review',
+        'COMPLETED' => 'Completed',
+        'CANCELLED' => 'Cancelled',
+        'REJECTED' => 'Rejected',
+    ];
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -92,17 +110,15 @@ class ActionOfficerStatusPresentationTest extends TestCase
         $this->assertSame(['VERIFIED', 'PENDING'], $version->approvalSteps()->orderBy('sequence_no')->pluck('decision')->all());
     }
 
-    public function test_accountability_group_keeps_property_action_and_simultaneous_late_return_visible(): void
+    public function test_request_record_uses_admin_accountability_status_with_simultaneous_late_return(): void
     {
         $custody = $this->custody('OBLIGATION_OPEN', true, true);
         $this->incident($custody, 'COMPLIANCE_REQUIRED', 'DAMAGED', 'REPAIR');
         $this->lateCase($custody, 'FOR_HEAD_APPROVAL');
         $before = $this->snapshot();
         $response = $this->officerRequest(route('requests.index'));
-        $response->assertOk()->assertSee('For Compliance')->assertSee('Damage Finding')
-            ->assertSee('Repair Required')->assertSee('For Late Return Approval')->assertSee('Returned Late');
-        $this->assertRecord($response->getContent(), 'ACCOUNTABILITY_PROCESSING', 'COMPLIANCE_REQUIRED', true);
-        $response->assertDontSee('value="SLDDP"', false)->assertDontSee('value="RETURNED_LATE"', false);
+        $response->assertOk();
+        $this->assertRecord($response->getContent(), 'ACCOUNTABILITY_REVIEW', 'ACCOUNTABILITY_REVIEW', false);
         $this->assertSame($before, $this->snapshot());
     }
 
@@ -112,27 +128,225 @@ class ActionOfficerStatusPresentationTest extends TestCase
         $this->incident($custody, 'COMPLIANCE_REQUIRED', 'LOST', 'REPLACEMENT');
         $this->lateCase($custody, 'OVERDUE');
         $response = $this->officerRequest(route('requests.index'));
-        $response->assertOk()->assertSee('Overdue')->assertSee('Loss Finding')->assertSee('Replacement Required')
-            ->assertSee('For Compliance')->assertDontSee('Returned Late');
-        $this->assertRecord($response->getContent(), 'ON_CUSTODY', 'OVERDUE', true);
+        $response->assertOk();
+        $this->assertRecord($response->getContent(), 'OVERDUE', 'OVERDUE', false);
     }
 
-    public function test_a_cleared_late_return_remains_completed_with_a_historical_late_indicator(): void
+    public function test_a_cleared_late_return_uses_admin_returned_late_record_status(): void
     {
         $custody = $this->custody('CLOSED', true, true);
         $this->lateCase($custody, 'RESOLVED');
         $response = $this->officerRequest(route('requests.index'));
         $response->assertOk()->assertSee('Returned Late');
-        $this->assertRecord($response->getContent(), 'COMPLETED', 'COMPLETED', false);
+        $this->assertRecord($response->getContent(), 'RETURNED_LATE', 'RETURNED_LATE', false);
     }
 
-    public function test_payment_stage_retains_its_property_case_reason(): void
+    public function test_request_record_uses_admin_slddp_status_for_payment_stage(): void
     {
         $custody = $this->custody('OBLIGATION_OPEN', true, true);
         $this->incident($custody, 'RSLDDP_PAYMENT_REQUIRED', 'LOST');
         $response = $this->officerRequest(route('requests.index'));
-        $response->assertOk()->assertSee('For Payment')->assertSee('Loss Finding');
-        $this->assertRecord($response->getContent(), 'ACCOUNTABILITY_PROCESSING', 'RSLDDP_PAYMENT_REQUIRED', true);
+        $response->assertOk();
+        $this->assertRecord($response->getContent(), 'SLDDP', 'SLDDP', false);
+    }
+
+    public function test_both_staff_roles_share_admin_options_badges_and_filter_keys_for_every_stage(): void
+    {
+        $records = collect();
+        $expected = [];
+        $borrower = User::where('access_classification', AccessClassification::BorrowerOnly->value)->firstOrFail();
+        foreach ([
+            'SIGNED' => 'FOR_APPROVAL', 'SUBMITTED' => 'FOR_APPROVAL',
+            'UNDER_SPMU' => 'FOR_APPROVAL', 'UNDER_GSU' => 'FOR_APPROVAL', 'UNDER_VPAF' => 'FOR_APPROVAL',
+            'RETURNED_FOR_REVISION' => 'NEEDS_REVISION',
+            'FINAL_APPROVED_AWAITING_DOWNLOAD' => 'FOR_ISSUANCE', 'APPROVED_READY_FOR_RELEASE' => 'FOR_ISSUANCE',
+            'CANCELLED' => 'CANCELLED', 'EXPIRED' => 'CANCELLED', 'REJECTED' => 'REJECTED',
+        ] as $raw => $key) {
+            $record = BorrowingRequest::create([
+                'request_no' => 'BR-RECORD-'.$raw, 'borrower_user_id' => $borrower->id,
+                'accountable_unit_id' => $borrower->organizational_unit_id, 'current_version_no' => 1,
+                'status' => $raw,
+            ]);
+            $record->versions()->create([
+                'version_no' => 1, 'purpose_event' => self::RECORD_STATUSES[$key].' sample',
+                'location' => 'Campus', 'needed_from' => now()->addDay(), 'return_due_at' => now()->addDays(2),
+                'created_by_user_id' => $borrower->id,
+            ]);
+            $records->push($record->fresh());
+            $expected[$record->request_no] = $key;
+        }
+
+        foreach ([
+            'PREPARING_RELEASE' => 'FOR_ISSUANCE', 'ON_CUSTODY' => 'ON_CUSTODY',
+            'OVERDUE' => 'OVERDUE', 'RETURN_PROCESSING' => 'ON_CUSTODY',
+            'CLOSED' => 'COMPLETED', 'OBLIGATION_OPEN' => 'ACCOUNTABILITY_REVIEW',
+        ] as $raw => $key) {
+            $custody = $this->custody($raw, $raw !== 'PREPARING_RELEASE', $raw === 'CLOSED');
+            if ($raw === 'CLOSED') {
+                $custody->returns()->update(['received_at' => now()->subDays(2)]);
+            }
+            $record = $custody->request->fresh();
+            $records->push($record);
+            $expected[$record->request_no] = $key;
+        }
+
+        foreach ([
+            'PICKUP_SCHEDULED' => ['prepared_at' => now(), 'scheduled_release_at' => now()->addHour(), 'pickup_expires_at' => now()->addHours(2)],
+            'READY_FOR_PICKUP' => ['prepared_at' => now(), 'scheduled_release_at' => now()->subHour(), 'pickup_expires_at' => now()->addHour()],
+            'MISSED_PICKUP' => ['scheduled_release_at' => now()->subHours(2), 'pickup_expires_at' => now()->subHour()],
+        ] as $key => $changes) {
+            $custody = $this->custody('PREPARING_RELEASE', false);
+            $custody->update($changes);
+            $record = $custody->request->fresh();
+            $records->push($record);
+            $expected[$record->request_no] = $key;
+        }
+
+        $custody = $this->custody('CLOSED', true, true);
+        $records->push($custody->request->fresh());
+        $expected[$custody->request->request_no] = 'RETURNED_LATE';
+        $custody = $this->custody('OBLIGATION_OPEN', true, true);
+        $this->incident($custody, 'RSLDDP_PAYMENT_REQUIRED', 'LOST');
+        $records->push($custody->request->fresh());
+        $expected[$custody->request->request_no] = 'SLDDP';
+
+        $before = $this->snapshot();
+        foreach ([AccessClassification::SpmuHead, AccessClassification::SpmuOfficer] as $role) {
+            $staff = User::where('access_classification', $role->value)->firstOrFail();
+            $this->actingAs($staff)->withSession(['active_workspace' => 'SPMU']);
+            // Render the same records to test presentation independently of role visibility.
+            // Route-level record access is covered by PremisesApprovalRoutingTest.
+            $html = view('requests.index', [
+                'requests' => $records, 'errors' => new \Illuminate\Support\ViewErrorBag,
+            ])->render();
+            if ($directory = getenv('SPMU_UI_EVIDENCE_DIR')) {
+                file_put_contents($directory.'/'.$role->value.'.html', $html);
+            }
+            $document = new \DOMDocument;
+            @$document->loadHTML($html);
+            $xpath = new \DOMXPath($document);
+            $options = [];
+            foreach ($xpath->query('//select[@data-record-status-filter]/option') as $option) {
+                $options[$option->getAttribute('value')] = trim($option->textContent);
+            }
+            $this->assertSame(self::RECORD_STATUSES, $options, $role->value);
+            $rows = $xpath->query('//tr[@data-request-record]');
+            $this->assertCount(count($expected), $rows);
+            foreach ($rows as $row) {
+                $number = trim($xpath->query('./td[1]/strong', $row)->item(0)->textContent);
+                $key = $expected[$number];
+                $this->assertSame($key, $row->getAttribute('data-status'), $number.' '.$role->value);
+                $this->assertSame($key, $row->getAttribute('data-status-key'), $number.' '.$role->value);
+                $this->assertSame(self::RECORD_STATUSES[$key], trim($xpath->query('./td[5]', $row)->item(0)->textContent));
+            }
+        }
+        $this->assertSame($before, $this->snapshot(), 'Rendering must not change workflow, stock or request records.');
+    }
+
+    #[DataProvider('recordDetailStates')]
+    public function test_admin_list_request_detail_and_custody_detail_use_the_same_main_status(string $state, string $expected): void
+    {
+        $preRelease = in_array($state, ['no_schedule', 'item_preparation', 'scheduled', 'ready', 'missed', 'cancelled'], true);
+        $raw = match ($state) {
+            'no_schedule', 'item_preparation', 'scheduled', 'ready', 'missed' => 'PREPARING_RELEASE',
+            'completed', 'returned_late' => 'CLOSED',
+            'accountability', 'slddp' => 'OBLIGATION_OPEN',
+            'return_processing' => 'RETURN_PROCESSING',
+            'overdue' => 'OVERDUE', 'cancelled' => 'CANCELLED',
+            default => 'BORROWED',
+        };
+        $custody = $this->custody($raw, ! $preRelease, in_array($state, ['completed', 'returned_late'], true));
+        if (in_array($state, ['item_preparation', 'scheduled', 'ready', 'missed'], true)) {
+            $custody->update([
+                'prepared_at' => $state === 'item_preparation' ? null : now(),
+                'scheduled_release_at' => $state === 'scheduled' ? now()->addHour() : now()->subHours(2),
+                'pickup_expires_at' => $state === 'missed' ? now()->subHour() : now()->addHours(2),
+            ]);
+        }
+        if ($state === 'completed') {
+            $custody->returns()->update(['received_at' => now()->subDays(2)]);
+        }
+        if ($state === 'slddp') {
+            $this->incident($custody, 'RSLDDP_PAYMENT_REQUIRED', 'LOST');
+        }
+        if ($state === 'cancelled') {
+            $custody->request->update(['status' => RequestStatus::Cancelled]);
+        }
+        // The existing custody page backfills this metadata on legacy rows.
+        // Start with normalized fixtures so this check isolates status presentation.
+        $custody->update(['original_due_at' => $custody->due_at]);
+        $head = User::where('access_classification', AccessClassification::SpmuHead->value)->firstOrFail();
+        $this->actingAs($head)->withSession(['active_workspace' => 'SPMU']);
+        $before = $this->snapshot();
+        $list = $this->get(route('requests.index'))->assertOk();
+        $document = new \DOMDocument;
+        @$document->loadHTML($list->getContent());
+        $xpath = new \DOMXPath($document);
+        $rows = $xpath->query('//tr[@data-request-record]');
+        $this->assertCount(1, $rows);
+        $this->assertSame($expected, $rows->item(0)->getAttribute('data-status'));
+        $this->assertSame(self::RECORD_STATUSES[$expected], trim($xpath->query('./td[5]', $rows->item(0))->item(0)->textContent));
+        foreach ([route('requests.show', $custody->request), route('custody.show', $custody)] as $url) {
+            $response = $this->get($url)->assertOk();
+            $document = new \DOMDocument;
+            @$document->loadHTML($response->getContent());
+            $badge = (new \DOMXPath($document))->query('//*[@data-record-status]');
+            $this->assertCount(1, $badge, $url);
+            $this->assertSame(self::RECORD_STATUSES[$expected], trim($badge->item(0)->textContent), $url);
+        }
+        $this->assertSame($before, $this->snapshot(), 'Status presentation must not change workflow or inventory records.');
+    }
+
+    public static function recordDetailStates(): array
+    {
+        return [
+            ['no_schedule', 'FOR_ISSUANCE'], ['item_preparation', 'FOR_ISSUANCE'],
+            ['scheduled', 'PICKUP_SCHEDULED'], ['ready', 'READY_FOR_PICKUP'], ['missed', 'MISSED_PICKUP'],
+            ['on_custody', 'ON_CUSTODY'], ['return_processing', 'ON_CUSTODY'], ['overdue', 'OVERDUE'],
+            ['completed', 'COMPLETED'], ['returned_late', 'RETURNED_LATE'],
+            ['accountability', 'ACCOUNTABILITY_REVIEW'], ['slddp', 'SLDDP'], ['cancelled', 'CANCELLED'],
+        ];
+    }
+
+    #[DataProvider('requestOnlyDetailStates')]
+    public function test_admin_request_detail_matches_the_list_before_custody_exists(RequestStatus $status, string $expected): void
+    {
+        $custody = $this->custody('PREPARING_RELEASE', false);
+        $request = $custody->request;
+        $custody->lines()->delete();
+        $custody->delete();
+        $request->update(['status' => $status]);
+        if ($status === RequestStatus::UnderSpmu) {
+            $request->currentVersion->approvalSteps()->create(['sequence_no' => 1, 'stage_code' => 'SPMU', 'decision' => 'VERIFIED']);
+            $request->currentVersion->approvalSteps()->create(['sequence_no' => 2, 'stage_code' => 'SPMU', 'decision' => 'PENDING']);
+        }
+        $head = User::where('access_classification', AccessClassification::SpmuHead->value)->firstOrFail();
+        $this->actingAs($head)->withSession(['active_workspace' => 'SPMU']);
+        $before = $this->snapshot();
+        $list = $this->get(route('requests.index'))->assertOk();
+        $document = new \DOMDocument;
+        @$document->loadHTML($list->getContent());
+        $row = (new \DOMXPath($document))->query('//tr[@data-request-record]')->item(0);
+        $this->assertNotNull($row);
+        $this->assertSame($expected, $row->getAttribute('data-status'));
+        $detail = $this->get(route('requests.show', $request))->assertOk();
+        $document = new \DOMDocument;
+        @$document->loadHTML($detail->getContent());
+        $badge = (new \DOMXPath($document))->query('//*[@data-record-status]');
+        $this->assertCount(1, $badge);
+        $this->assertSame(self::RECORD_STATUSES[$expected], trim($badge->item(0)->textContent));
+        $this->assertSame($before, $this->snapshot());
+    }
+
+    public static function requestOnlyDetailStates(): array
+    {
+        return [
+            [RequestStatus::UnderSpmu, 'FOR_APPROVAL'],
+            [RequestStatus::ReturnedForRevision, 'NEEDS_REVISION'],
+            [RequestStatus::ApprovedReadyForRelease, 'FOR_ISSUANCE'],
+            [RequestStatus::Cancelled, 'CANCELLED'], [RequestStatus::Expired, 'CANCELLED'],
+            [RequestStatus::Rejected, 'REJECTED'],
+        ];
     }
 
     private function assertRecord(string $html, string $filter, string $status, bool $attention): void
@@ -145,7 +359,7 @@ class ActionOfficerStatusPresentationTest extends TestCase
         $this->assertSame($filter, $row->getAttribute('data-status'));
         $this->assertSame($status, $row->getAttribute('data-status-key'));
         $this->assertSame($attention ? '1' : '0', $row->getAttribute('data-attention'));
-        $this->assertSame(count(ActionOfficerStatusPresentation::filters()) + 2, $xpath->query('//select[@data-record-status-filter]/option')->length);
+        $this->assertSame(count(self::RECORD_STATUSES), $xpath->query('//select[@data-record-status-filter]/option')->length);
     }
 
     private function officerRequest(string $url)

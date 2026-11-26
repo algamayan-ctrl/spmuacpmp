@@ -35,7 +35,7 @@ class CustodyReleasePageRedesignTest extends TestCase
         $this->seed(DatabaseSeeder::class);
     }
 
-    public function test_on_campus_release_tracker_excludes_ao_verification(): void
+    public function test_on_campus_release_tracker_keeps_ao_visible_as_not_required(): void
     {
         $custody = $this->preparingCustody(offCampus: false);
         $officer = $this->classificationUser(AccessClassification::SpmuOfficer);
@@ -45,9 +45,9 @@ class CustodyReleasePageRedesignTest extends TestCase
             ->get(route('custody.release.show', $custody));
 
         $response->assertOk();
-        $response->assertDontSee('Action Officer Verification');
+        $response->assertSee('Action Officer Verification')->assertSee('Not required');
         $response->assertDontSee('Request Prepared');
-        $this->assertTrackerLayout($response->getContent(), 6);
+        $this->assertTrackerLayout($response->getContent(), 7);
     }
 
     public function test_off_campus_release_tracker_includes_ao_verification(): void

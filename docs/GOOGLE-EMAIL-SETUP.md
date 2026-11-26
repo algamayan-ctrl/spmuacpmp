@@ -20,6 +20,12 @@ Sources: https://developers.google.com/identity/protocols/oauth2/web-server and 
 
 ## Real email transport
 
+Current localhost Docker verification — 23 November 2026: the owner configured a Gmail App Password privately in `.env.docker`. SMTP host is `smtp.gmail.com`, port `587`, scheme `smtp`; username and sender are `spmuacpmp@gmail.com`. App, queue and scheduler were recreated from existing images with live migrations disabled for this refresh, retaining the database and storage. The current application is at `http://localhost:8080`.
+
+Gmail accepted authentication from the refreshed app. One actual verification-code email was accepted for the owner's explicitly authorized inbox using an isolated in-memory account, and internal OTP verification passed (1 test / 10 assertions). The owner confirmed receipt in the spmuacpmp@gmail.com Inbox. Auth/email regression: 28 tests / 186 assertions passed. No live registration was created; live user/inventory/request/migration counts are unchanged. For normal registration/Resend OTP, request a fresh code for the intended real account; the smoke-test code belongs only to the isolated account. Google OAuth acceptance remains a separate check.
+
+Changing `.env.docker` does not update existing containers through a plain restart. Refresh the relevant services with the new environment, preserve the database/storage, and avoid rerunning live migrations/seeding for a mail-only configuration change. Never print or commit MAIL_PASSWORD.
+
 Select an existing institutional/Hostinger SMTP mailbox or another supported provider. For an eligible Gmail account, an App Password can be used for development testing; this is distinct from the normal Google password and may be unavailable under account/organization restrictions. Do not invent a CSPC sender address: MAIL_FROM_ADDRESS must be authorized by the selected provider.
 
 Set the provider's MAIL_MAILER=smtp, MAIL_HOST, MAIL_PORT, MAIL_SCHEME, MAIL_USERNAME, MAIL_PASSWORD, MAIL_FROM_ADDRESS, MAIL_FROM_NAME and MAIL_TIMEOUT=15 privately. Gmail SMTP uses smtp.gmail.com with port 465 and MAIL_SCHEME=smtps, or the provider's documented STARTTLS settings. Institutional/Hostinger values must come from that mailbox's control panel, including SPF/DKIM settings for the actual sending domain.

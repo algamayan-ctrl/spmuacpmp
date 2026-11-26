@@ -6,11 +6,13 @@
     font-size: 13px;
 }
 .request-operational-page .request-operational-heading {
-    align-items: center;
-    flex-direction: row;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(280px, .85fr);
+    align-items: start;
     gap: 16px;
     margin-bottom: 22px;
 }
+.request-operational-page .request-operational-identity { min-width: 0; }
 .request-operational-page .request-operational-title-row {
     display: flex;
     align-items: center;
@@ -18,6 +20,8 @@
     flex-wrap: wrap;
 }
 .request-operational-page .request-operational-title-row h1 {
+    min-width: 0;
+    max-width: 100%;
     margin: 0;
     font-size: clamp(25px, 2.1vw, 32px);
     font-weight: 750;
@@ -36,10 +40,12 @@
     font-size: 16px;
 }
 .request-operational-page .request-operational-next-action {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
-    gap: 16px;
-    flex-shrink: 0;
+    gap: 12px;
+    min-width: 0;
+    width: 100%;
     padding: 7px 12px 7px 12px;
     border: 1px solid var(--row-border);
     border-radius: 9px;
@@ -49,6 +55,7 @@
     margin: 0;
     color: var(--text);
     font-size: 13px;
+    overflow-wrap: anywhere;
 }
 .request-operational-next-action p > span { color: var(--text-muted); }
 .request-operational-page .button.request-custody-link {
@@ -279,9 +286,9 @@
 .request-operational-page .request-activity-history > .table-wrap { margin: 0 12px 12px; }
 html[data-theme="dark"] .request-operational-page { --request-blue: #72b7f4; }
 html[data-theme="dark"] .request-operational-page .request-custody-link { background: #0863db; border-color: #0863db; }
-@media (max-width: 1280px) {
-    .request-operational-page .request-operational-heading { flex-wrap: wrap; }
-    .request-operational-page .request-operational-next-action { margin-left: auto; }
+@media (max-width: 760px) {
+    .request-operational-page .request-operational-heading { grid-template-columns: minmax(0, 1fr); }
+    .request-operational-page .request-operational-heading > .request-operational-next-action { grid-column: 1; }
 }
 @media (max-width: 1000px) {
     .request-operational-page .request-operational-grid { grid-template-columns: minmax(0, 1fr); }
@@ -299,7 +306,7 @@ html[data-theme="dark"] .request-operational-page .request-custody-link { backgr
     }
     .request-operational-page .request-operational-next-action {
         width: 100%;
-        flex-wrap: wrap;
+        grid-template-columns: minmax(0, 1fr);
         gap: 10px;
         padding: 12px;
     }

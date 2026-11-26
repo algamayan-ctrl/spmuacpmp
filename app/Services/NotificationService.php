@@ -651,7 +651,7 @@ HTML;
                 $data['details']['Office / College / Unit'] = (string) $unit;
             }
 
-            if ($version?->represents_student_activity) {
+            if ($version?->requiresPermissionToConduct()) {
                 $data['details']['Student Activity'] = 'Yes';
             }
 

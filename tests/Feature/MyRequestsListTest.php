@@ -216,8 +216,8 @@ class MyRequestsListTest extends TestCase
         foreach ([
             ['search' => $foreign->request_no],
             ['search' => 'Foreign Projector'],
-            ['status' => 'FOR_REVIEW'],
-            ['search' => $foreign->request_no, 'status' => 'FOR_REVIEW'],
+            ['status' => 'FOR_APPROVAL'],
+            ['search' => $foreign->request_no, 'status' => 'FOR_APPROVAL'],
         ] as $query) {
             $filtered = $this->myRequests($borrower, $query);
             $filtered->assertOk()->assertDontSee(route('requests.show', $foreign), false);
@@ -229,22 +229,24 @@ class MyRequestsListTest extends TestCase
     /* Pagination                                                          */
     /* ------------------------------------------------------------------ */
 
-    public function test_requests_are_split_into_pages_of_ten(): void
+    public function test_requests_are_split_into_pages_of_seven(): void
     {
         $borrower = $this->borrower();
         $records = collect(range(1, 23))->map(fn () => $this->request($borrower));
 
         $page1 = $this->myRequests($borrower);
-        $page1->assertOk()->assertSee('Showing 1 to 10 of 23 requests')->assertSee('23 requests found');
-        $this->assertSame(3, $page1->viewData('requests')->lastPage());
+        $page1->assertOk()->assertSee('Showing 1 to 7 of 23 requests')->assertSee('23 requests found');
+        $this->assertSame(4, $page1->viewData('requests')->lastPage());
 
         $page2 = $this->myRequests($borrower, ['page' => 2]);
-        $page2->assertSee('Showing 11 to 20 of 23 requests');
+        $page2->assertSee('Showing 8 to 14 of 23 requests');
 
         $page3 = $this->myRequests($borrower, ['page' => 3]);
-        $page3->assertSee('Showing 21 to 23 of 23 requests');
+        $page3->assertSee('Showing 15 to 21 of 23 requests');
+        $page4 = $this->myRequests($borrower, ['page' => 4]);
+        $page4->assertSee('Showing 22 to 23 of 23 requests');
 
-        $allIds = array_merge($this->ids($page1), $this->ids($page2), $this->ids($page3));
+        $allIds = array_merge($this->ids($page1), $this->ids($page2), $this->ids($page3), $this->ids($page4));
         $this->assertEqualsCanonicalizing($records->pluck('id')->all(), $allIds);
         $this->assertSame($records->last()->id, $this->ids($page1)[0]);
     }
@@ -306,7 +308,7 @@ class MyRequestsListTest extends TestCase
     {
         $this->myRequests($this->borrower())
             ->assertOk()
-            ->assertSee('No borrowing requests yet.')
+            ->assertSee('No ongoing requests.')
             ->assertDontSee('No matching requests.');
     }
 
@@ -339,8 +341,8 @@ class MyRequestsListTest extends TestCase
             'returned' => 5,
         ]);
 
-        // An open accountability case: My Requests reports the borrowing as
-        // Completed (the case itself is followed in My Obligations).
+        // An open accountability case must use the same status as Admin,
+        // rather than appearing among Completed records.
         $withCase = $this->request($borrower, RequestStatus::ApprovedReadyForRelease, ['custody' => []]);
         Incident::query()->create([
             'incident_no' => 'INC-MR-0001',
@@ -354,14 +356,12 @@ class MyRequestsListTest extends TestCase
 
         $expectations = [
             'DRAFT' => [$draft->id],
-            'FOR_REVIEW' => [$forReview->id, $submitted->id],
+            'FOR_APPROVAL' => [$forReview->id, $submitted->id],
             'NEEDS_REVISION' => [$revision->id],
-            'REJECTED' => [$rejected->id],
-            'CANCELLED' => [$cancelled->id],
             'FOR_ISSUANCE' => [$approvedNoCustody->id, $preparing->id],
             'ON_CUSTODY' => [$onCustody->id],
             'OVERDUE' => [$overdue->id],
-            'COMPLETED' => [$closed->id, $withCase->id],
+            'ACCOUNTABILITY_REVIEW' => [$withCase->id],
             'MISSED_PICKUP' => [],
         ];
 
@@ -375,8 +375,15 @@ class MyRequestsListTest extends TestCase
             }
         }
 
-        $this->myRequests($borrower, ['status' => 'COMPLETED'])
-            ->assertSee('<option value="COMPLETED" selected>', false);
+        $ongoing = $this->myRequests($borrower, ['per_page' => 50])->assertOk();
+        foreach ([$closed, $cancelled, $rejected] as $ended) {
+            $this->assertNotContains($ended->id, $this->ids($ongoing));
+        }
+        foreach (['COMPLETED' => $closed, 'CANCELLED' => $cancelled, 'REJECTED' => $rejected] as $status => $ended) {
+            $history = $this->withSession(['active_workspace' => 'BORROWER'])->actingAs($borrower)
+                ->get(route('custody.index', ['status' => $status]))->assertOk();
+            $this->assertSame([$ended->id], $history->viewData('borrowerRecords')->pluck('id')->all());
+        }
     }
 
     public function test_unknown_status_and_sort_values_fall_back_to_defaults(): void
@@ -391,6 +398,207 @@ class MyRequestsListTest extends TestCase
         $this->assertSame([$newer->id, $older->id], $this->ids($response));
         $this->assertSame('all', $response->viewData('borrowerRequestFilters')['status']);
         $this->assertSame('newest', $response->viewData('borrowerRequestFilters')['sort']);
+    }
+
+    public function test_both_borrower_scopes_share_staff_classification_and_all_filters_cover_every_owned_page(): void
+    {
+        $labels = [
+            'DRAFT' => 'Draft', 'FOR_APPROVAL' => 'For Approval', 'NEEDS_REVISION' => 'Needs Revision',
+            'PICKUP_SCHEDULED' => 'Pickup Scheduled', 'FOR_ISSUANCE' => 'For Issuance',
+            'READY_FOR_PICKUP' => 'Ready for Pickup', 'MISSED_PICKUP' => 'Missed Pickup',
+            'ON_CUSTODY' => 'On Custody', 'OVERDUE' => 'Overdue', 'RETURNED_LATE' => 'Returned Late',
+            'SLDDP' => 'SLDDP', 'ACCOUNTABILITY_REVIEW' => 'Accountability Review',
+            'COMPLETED' => 'Completed', 'CANCELLED' => 'Cancelled', 'REJECTED' => 'Rejected',
+        ];
+        $borrower = $this->borrower();
+        $other = $this->borrower();
+        $officer = $this->officer();
+        $head = $this->officer();
+        $head->update(['access_classification' => AccessClassification::SpmuHead]);
+        $expected = [];
+        foreach ($labels as $key => $label) {
+            $raw = match ($key) {
+                'DRAFT' => RequestStatus::Draft, 'FOR_APPROVAL' => RequestStatus::UnderSpmu,
+                'NEEDS_REVISION' => RequestStatus::ReturnedForRevision,
+                'CANCELLED' => RequestStatus::Cancelled, 'REJECTED' => RequestStatus::Rejected,
+                default => RequestStatus::ApprovedReadyForRelease,
+            };
+            $options = ['purpose' => 'Canonical status fixture'];
+            if (in_array($key, ['PICKUP_SCHEDULED', 'READY_FOR_PICKUP', 'MISSED_PICKUP'], true)) {
+                $options['custody'] = [
+                    'status' => 'PREPARING_RELEASE', 'released_at' => null, 'prepared_at' => now(),
+                    'scheduled_release_at' => $key === 'PICKUP_SCHEDULED' ? now()->addHour() : now()->subHours(2),
+                    'pickup_expires_at' => $key === 'MISSED_PICKUP' ? now()->subHour() : now()->addHours(2),
+                ];
+            } elseif (in_array($key, ['COMPLETED', 'RETURNED_LATE'], true)) {
+                $options['custody'] = ['status' => 'CLOSED', 'closed_at' => now(),
+                    'due_at' => $key === 'RETURNED_LATE' ? now()->subDays(2) : now()->addDay()];
+                $options['returned'] = 5;
+            } elseif (in_array($key, ['ON_CUSTODY', 'OVERDUE', 'SLDDP', 'ACCOUNTABILITY_REVIEW'], true)) {
+                $options['custody'] = ['status' => match ($key) {
+                    'OVERDUE' => 'OVERDUE', 'SLDDP', 'ACCOUNTABILITY_REVIEW' => 'OBLIGATION_OPEN', default => 'BORROWED',
+                }];
+            }
+            $record = $this->request($borrower, $raw, $options);
+            if ($key === 'SLDDP') {
+                Incident::create([
+                    'incident_no' => 'INC-CANONICAL-SLDDP', 'custody_transaction_id' => $record->custody->id,
+                    'borrower_user_id' => $borrower->id, 'reported_by_user_id' => $officer->id,
+                    'incident_type' => 'LOST', 'reported_at' => now(), 'status' => 'RSLDDP_PAYMENT_REQUIRED',
+                ]);
+            }
+            $expected[$key] = [$record->id];
+        }
+        // More than the largest page size proves that Completed filtering covers the final page.
+        for ($number = 0; $number < 52; $number++) {
+            $expected['COMPLETED'][] = $this->request($borrower, RequestStatus::ApprovedReadyForRelease, [
+                'purpose' => 'Canonical status fixture', 'custody' => ['status' => 'CLOSED', 'closed_at' => now()], 'returned' => 5,
+            ])->id;
+        }
+        $foreign = $this->request($other, RequestStatus::ApprovedReadyForRelease, [
+            'purpose' => 'Canonical status fixture', 'custody' => ['status' => 'CLOSED', 'closed_at' => now()], 'returned' => 5,
+        ]);
+        $this->request($borrower, RequestStatus::Draft, ['purpose' => 'Unrelated search fixture']);
+        $snapshot = fn () => collect(['borrowing_requests', 'request_versions', 'custody_transactions', 'custody_lines', 'incidents', 'inventory_items'])
+            ->mapWithKeys(fn ($table) => [$table => DB::table($table)->orderBy('id')->get()->toJson()])->all();
+        $before = $snapshot();
+        $optionsFor = static function (string $html, string $selector): array {
+            $document = new \DOMDocument;
+            @$document->loadHTML($html);
+            $options = [];
+            foreach ((new \DOMXPath($document))->query($selector) as $option) {
+                $options[$option->getAttribute('value')] = trim($option->textContent);
+            }
+            return $options;
+        };
+        $response = $this->myRequests($borrower)->assertOk();
+        $ongoingLabels = array_diff_key($labels, array_flip(['COMPLETED', 'CANCELLED', 'REJECTED']));
+        $this->assertSame(['all' => 'All ongoing statuses', ...$ongoingLabels], $optionsFor($response->getContent(), '//select[@id="request-status-filter"]/option'));
+        $staffLabels = $labels;
+        unset($staffLabels['DRAFT']);
+        $history = $this->withSession(['active_workspace' => 'BORROWER'])->actingAs($borrower)
+            ->get(route('custody.index'))->assertOk();
+        $this->assertSame(['all' => 'All statuses', ...$staffLabels], $optionsFor($history->getContent(), '//select[@id="borrowings-status"]/option'));
+        foreach ([$officer, $head->fresh()] as $staff) {
+            $response = $this->actingAs($staff)->withSession(['active_workspace' => 'SPMU'])->get(route('requests.index'))->assertOk();
+            $this->assertSame(['all' => 'All statuses', ...$staffLabels], $optionsFor($response->getContent(), '//select[@data-record-status-filter]/option'));
+        }
+        foreach ($labels as $status => $label) {
+            foreach ([7, 15, 30, 50] as $size) {
+                $seen = [];
+                $page = 1;
+                do {
+                    $query = [
+                        'status' => $status, 'search' => 'Canonical status', 'sort' => 'oldest', 'per_page' => $size, 'page' => $page,
+                    ];
+                    $response = $status === 'DRAFT' ? $this->myRequests($borrower, $query)
+                        : $this->withSession(['active_workspace' => 'BORROWER'])->actingAs($borrower)->get(route('custody.index', $query));
+                    $response->assertOk()->assertSee('<option value="'.$status.'" selected>', false);
+                    $records = $response->viewData($status === 'DRAFT' ? 'requests' : 'borrowerRecords');
+                    $seen = [...$seen, ...$records->pluck('id')->all()];
+                    foreach ($records as $record) {
+                        $this->assertSame(['key' => $status, 'label' => $label], $record->borrowerRecordStatus());
+                    }
+                    $document = new \DOMDocument;
+                    @$document->loadHTML($response->getContent());
+                    $xpath = new \DOMXPath($document);
+                    foreach ($xpath->query('//*[@data-request-card or @data-borrowings-record]') as $card) {
+                        $this->assertSame($status, $card->getAttribute($status === 'DRAFT' ? 'data-status' : 'data-borrowings-status'));
+                        $this->assertSame($label, trim($xpath->query('.//*[contains(@class,"status-badge")]', $card)->item(0)->textContent));
+                    }
+                    $page++;
+                } while ($page <= $records->lastPage());
+                $this->assertSame($expected[$status], $seen, $status.' at '.$size.' entries');
+                $this->assertSame(count($seen), count(array_unique($seen)));
+                $this->assertNotContains($foreign->id, $seen);
+            }
+            if (isset($ongoingLabels[$status])) {
+                $response = $this->myRequests($borrower, ['status' => $status, 'search' => 'Canonical status', 'per_page' => 50])->assertOk();
+                // This fixture's late return is fully settled, hence history-only.
+                $this->assertSame($status === 'RETURNED_LATE' ? [] : $expected[$status], $this->ids($response));
+            }
+        }
+        $this->assertSame($before, $snapshot(), 'List filters must not change request, custody, case or inventory records.');
+    }
+
+    public function test_ongoing_and_submitted_history_membership_matches_sidebar_counts_and_retains_detail_access(): void
+    {
+        $borrower = $this->borrower();
+        $draft = $this->request($borrower, RequestStatus::Draft);
+        $pending = $this->request($borrower, RequestStatus::UnderSpmu);
+        $revision = $this->request($borrower, RequestStatus::ReturnedForRevision);
+        $cancelled = $this->request($borrower, RequestStatus::Cancelled);
+        $rejected = $this->request($borrower, RequestStatus::Rejected);
+        $completed = $this->request($borrower, RequestStatus::ApprovedReadyForRelease, [
+            'custody' => ['status' => 'CLOSED', 'closed_at' => now()], 'returned' => 5,
+        ]);
+        $settledLate = $this->request($borrower, RequestStatus::ApprovedReadyForRelease, [
+            'custody' => ['status' => 'CLOSED', 'closed_at' => now(), 'due_at' => now()->subDays(2)], 'returned' => 5,
+        ]);
+        $pendingLate = $this->request($borrower, RequestStatus::ApprovedReadyForRelease, [
+            'custody' => ['status' => 'CLOSED', 'closed_at' => now(), 'due_at' => now()->subDays(2)], 'returned' => 5,
+        ]);
+        \App\Models\GatePass::create([
+            'custody_transaction_id' => $pendingLate->custody->id,
+            'custody_line_id' => $pendingLate->custody->lines->first()->id,
+            'bearer_name' => 'Synthetic Borrower', 'destination' => 'Campus', 'purpose' => 'Pending documentation', 'status' => 'PENDING',
+        ]);
+        $openCase = $this->request($borrower, RequestStatus::ApprovedReadyForRelease, [
+            'custody' => ['status' => 'CLOSED', 'closed_at' => now()], 'returned' => 5,
+        ]);
+        Incident::create([
+            'incident_no' => 'INC-ONGOING-CLOSED', 'custody_transaction_id' => $openCase->custody->id,
+            'borrower_user_id' => $borrower->id, 'reported_by_user_id' => $this->officer()->id,
+            'incident_type' => 'DAMAGED', 'reported_at' => now(), 'status' => 'COMPLIANCE_REQUIRED',
+        ]);
+        $foreign = $this->request($this->borrower(), RequestStatus::Rejected);
+        $response = $this->myRequests($borrower, ['per_page' => 50])->assertOk();
+        $this->assertEqualsCanonicalizing([$draft->id, $pending->id, $revision->id, $pendingLate->id, $openCase->id], $this->ids($response));
+        $late = $this->myRequests($borrower, ['status' => 'RETURNED_LATE'])->assertOk();
+        $this->assertSame([$pendingLate->id], $this->ids($late));
+        $history = $this->withSession(['active_workspace' => 'BORROWER'])->actingAs($borrower)
+            ->get(route('custody.index', ['per_page' => 50]))->assertOk();
+        $this->assertEqualsCanonicalizing([
+            $pending->id, $revision->id, $cancelled->id, $rejected->id, $completed->id,
+            $settledLate->id, $pendingLate->id, $openCase->id,
+        ], $history->viewData('borrowerRecords')->pluck('id')->all());
+        foreach ([$pending, $revision, $cancelled, $rejected] as $withoutCustody) {
+            $history->assertSee(route('requests.show', $withoutCustody), false);
+        }
+        $history->assertSee(route('custody.show', $completed->custody), false)
+            ->assertDontSee(route('requests.show', $foreign), false);
+        $counts = app(\App\Services\SidebarActionCountService::class)->counts($borrower);
+        $this->assertSame(5, $counts['requests.index']);
+        $this->assertSame(8, $counts['custody.index']);
+        $this->withSession(['active_workspace' => 'BORROWER'])->actingAs($borrower)
+            ->get(route('requests.show', $foreign))->assertForbidden();
+    }
+
+    public function test_ongoing_scope_is_applied_before_every_page_size_and_last_page(): void
+    {
+        $borrower = $this->borrower();
+        $expected = [];
+        for ($number = 0; $number < 53; $number++) {
+            $expected[] = $this->request($borrower, RequestStatus::UnderSpmu, ['purpose' => 'Ongoing pagination fixture'])->id;
+            if ($number % 10 === 0) {
+                $this->request($borrower, RequestStatus::Rejected, ['purpose' => 'Ongoing pagination fixture']);
+            }
+        }
+        $this->request($this->borrower(), RequestStatus::UnderSpmu, ['purpose' => 'Ongoing pagination fixture']);
+        foreach ([7, 15, 30, 50] as $size) {
+            $seen = [];
+            $page = 1;
+            do {
+                $response = $this->myRequests($borrower, [
+                    'search' => 'Ongoing pagination', 'status' => 'FOR_APPROVAL', 'sort' => 'oldest', 'per_page' => $size, 'page' => $page,
+                ])->assertOk();
+                $this->assertSame(53, $response->viewData('requests')->total());
+                $seen = [...$seen, ...$this->ids($response)];
+                $page++;
+            } while ($page <= $response->viewData('requests')->lastPage());
+            $this->assertSame($expected, $seen);
+            $this->assertSame(count($seen), count(array_unique($seen)));
+        }
     }
 
     /** @return array<string, array{string}> */
@@ -420,7 +628,7 @@ class MyRequestsListTest extends TestCase
         $response->assertOk();
         $this->assertSame([$newer->id, $older->id], $this->ids($response));
         $this->assertSame(
-            ['search' => '', 'status' => 'all', 'sort' => 'newest', 'active' => false],
+            ['search' => '', 'status' => 'all', 'sort' => 'newest', 'per_page' => 7, 'active' => false],
             $response->viewData('borrowerRequestFilters')
         );
     }
@@ -455,25 +663,25 @@ class MyRequestsListTest extends TestCase
         $this->request($borrower, RequestStatus::Draft, ['item' => 'Folding Chair']);
         $this->request($borrower, RequestStatus::UnderSpmu, ['item' => 'Round Table']);
 
-        $query = ['search' => 'Folding Chair', 'status' => 'FOR_REVIEW', 'sort' => 'oldest'];
+        $query = ['search' => 'Folding Chair', 'status' => 'FOR_APPROVAL', 'sort' => 'oldest'];
 
         $page1 = $this->myRequests($borrower, $query);
-        $page1->assertOk()->assertSee('Showing 1 to 10 of 12 requests');
+        $page1->assertOk()->assertSee('Showing 1 to 7 of 12 requests');
 
         $nextUrl = $page1->viewData('requests')->nextPageUrl();
         $this->assertStringContainsString('search=Folding%20Chair', $nextUrl);
-        $this->assertStringContainsString('status=FOR_REVIEW', $nextUrl);
+        $this->assertStringContainsString('status=FOR_APPROVAL', $nextUrl);
         $this->assertStringContainsString('sort=oldest', $nextUrl);
         $page1->assertSee(e($nextUrl), false);
 
         $page2 = $this->myRequests($borrower, $query + ['page' => 2]);
         $page2->assertOk()
-            ->assertSee('Showing 11 to 12 of 12 requests')
+            ->assertSee('Showing 8 to 12 of 12 requests')
             ->assertSee('value="Folding Chair"', false)
-            ->assertSee('<option value="FOR_REVIEW" selected>', false)
+            ->assertSee('<option value="FOR_APPROVAL" selected>', false)
             ->assertSee('<option value="oldest" selected>', false);
 
-        $this->assertSame($matching->slice(10)->pluck('id')->values()->all(), $this->ids($page2));
+        $this->assertSame($matching->slice(7)->pluck('id')->values()->all(), $this->ids($page2));
 
         // The filter form never carries the page, so a new filter starts at page 1.
         $page2->assertSee('id="request-filters"', false)->assertDontSee('name="page"', false);

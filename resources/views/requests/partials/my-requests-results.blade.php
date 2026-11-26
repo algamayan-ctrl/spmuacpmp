@@ -33,7 +33,7 @@
                 <label class="sr-only" for="my-requests-per-page">Requests per page</label>
                 <select id="my-requests-per-page" name="per_page" aria-label="Requests per page" onchange="this.form.submit()">
                     @foreach([7, 15, 30, 50] as $size)
-                        <option value="{{ $size }}" @selected($borrowerRequestFilters['per_page'] === $size)>{{ $size }} items per page</option>
+                        <option value="{{ $size }}" @selected($borrowerRequestFilters['per_page'] === $size)>{{ $size }} entries</option>
                     @endforeach
                 </select>
             </form>

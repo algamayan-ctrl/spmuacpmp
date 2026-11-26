@@ -279,7 +279,8 @@ test('scoped styles keep the compact two-column overview responsive and preserve
 test('release tracker reuses the canonical shared milestone labels instead of role-specific overrides', () => {
     const tracker = read('resources/views/components/request-progress-tracker.blade.php');
     assert.match(tracker, /'releaseView' => false/);
-    assert.match(processLayout, /:show-current-status="false" :compact="true" :release-view="true"/);
+    assert.match(page, /:show-current-status="false" :compact="\$isSpmuOfficer" :release-view="\$useReleaseProcessLayout"/);
+    assert.doesNotMatch(processLayout, /<x-request-progress-tracker/);
     for (const label of ['Submitted', 'SPMU Head Review', 'Pickup Scheduled', 'Release Processing', 'Return Processing', 'Completed']) {
         assert.ok(tracker.includes(`'label' => '${label}'`), `Missing canonical tracker label: ${label}`);
     }

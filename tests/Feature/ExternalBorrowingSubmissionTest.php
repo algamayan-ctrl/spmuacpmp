@@ -11,6 +11,7 @@ use App\Models\BorrowingRequest;
 use App\Models\InventoryItem;
 use App\Models\NotificationDelivery;
 use App\Models\NotificationEvent;
+use App\Models\RequestSupportingDocument;
 use App\Models\SignatureSnapshot;
 use App\Models\StoredFile;
 use App\Models\User;
@@ -100,24 +101,144 @@ class ExternalBorrowingSubmissionTest extends TestCase
         return ['on campus' => [false], 'off campus' => [true]];
     }
 
-    public function test_external_student_activity_requires_ptc_and_both_documents_remain_private(): void
+    public function test_external_student_activity_and_ptc_are_rejected_without_writing_documents(): void
     {
         $borrower = $this->borrower();
         $this->signature($borrower);
         $payload = $this->payload(submit: true) + ['represents_student_activity' => 1, 'approved_request_letter' => $this->letter()];
         $before = Storage::disk('local')->allFiles();
-        $this->post(route('requests.store'), $payload)->assertSessionHasErrors('permission_to_conduct_letter');
+        $this->post(route('requests.store'), $payload)->assertSessionHasErrors('represents_student_activity');
         $this->assertDatabaseCount('borrowing_requests', 0);
         $this->assertEqualsCanonicalizing($before, Storage::disk('local')->allFiles());
-        $this->post(route('requests.store'), $payload + ['permission_to_conduct_letter' => $this->letter('ptc.pdf')])->assertSessionHasNoErrors();
-        $request = BorrowingRequest::query()->sole();
-        $this->assertSame(2, $request->currentVersion->supportingDocuments()->current()->count());
-        $other = $this->borrower();
-        foreach ($request->currentVersion->supportingDocuments as $document) {
-            $this->assertSame('local', $document->file->disk);
-            $this->actingAs($borrower)->withSession(['active_workspace' => 'BORROWER'])->get(route('files.show', $document->file))->assertOk();
-            $this->actingAs($other)->get(route('files.show', $document->file))->assertForbidden();
+        $this->post(route('requests.store'), $payload + ['permission_to_conduct_letter' => $this->letter('ptc.pdf')])
+            ->assertSessionHasErrors(['represents_student_activity', 'permission_to_conduct_letter']);
+        $this->assertDatabaseCount('borrowing_requests', 0);
+        $this->assertDatabaseCount('request_supporting_documents', 0);
+        $this->assertEqualsCanonicalizing($before, Storage::disk('local')->allFiles());
+    }
+
+    public static function externalFormStages(): array
+    {
+        return [['create'], ['draft'], ['revision']];
+    }
+
+    #[DataProvider('externalFormStages')]
+    public function test_external_forms_have_no_student_activity_or_ptc_controls(string $stage): void
+    {
+        if ($stage === 'create') {
+            $this->borrower();
+            $url = route('requests.create');
+        } else {
+            $request = $this->draft(withLetter: true);
+            // Existing External drafts/revisions may predate the CSPC-only rule.
+            $request->currentVersion->update(['represents_student_activity' => true]);
+            if ($stage === 'revision') {
+                $request->update(['status' => RequestStatus::ReturnedForRevision]);
+            }
+            $url = route('requests.edit', $request);
         }
+        $response = $this->get($url)->assertOk()->assertDontSee('This request represents a student activity');
+        $dom = new \DOMDocument;
+        @$dom->loadHTML($response->getContent());
+        $xpath = new \DOMXPath($dom);
+        foreach (['//input[@name="represents_student_activity"]', '//input[@name="permission_to_conduct_letter"]', '//*[@id="ptc-document-box"]', '//*[@id="summary-student-activity"]'] as $query) {
+            $this->assertSame(0, $xpath->query($query)->length, $query);
+        }
+        $this->assertSame(1, $xpath->query('//input[@name="approved_request_letter"]')->length);
+    }
+
+    public function test_cspc_form_retains_student_activity_and_ptc_controls(): void
+    {
+        $borrower = User::where('email', 'borrower@spmu.test')->sole();
+        $response = $this->actingAs($borrower)->withSession(['active_workspace' => 'BORROWER'])
+            ->get(route('requests.create'))->assertOk()->assertSee('This request represents a student activity');
+        $dom = new \DOMDocument;
+        @$dom->loadHTML($response->getContent());
+        $xpath = new \DOMXPath($dom);
+        $this->assertSame(1, $xpath->query('//input[@id="student-activity-toggle"]')->length);
+        $this->assertSame(1, $xpath->query('//input[@name="permission_to_conduct_letter"]')->length);
+    }
+
+    public static function unsupportedExternalInputs(): array
+    {
+        $cases = [];
+        foreach (['create', 'draft', 'revision'] as $stage) {
+            foreach (['represents_student_activity', 'permission_to_conduct_letter', 'student_organization', 'represented_program_department', 'represented_year_level'] as $field) {
+                $cases[$stage.' '.$field] = [$stage, $field];
+            }
+        }
+        return $cases;
+    }
+
+    #[DataProvider('unsupportedExternalInputs')]
+    public function test_external_student_activity_inputs_cannot_bypass_the_form(string $stage, string $field): void
+    {
+        $request = null;
+        if ($stage === 'create') {
+            $this->borrower();
+        } else {
+            $request = $this->draft(withLetter: true);
+            if ($stage === 'revision') {
+                $request->update(['status' => RequestStatus::ReturnedForRevision]);
+            }
+        }
+        $before = collect(['borrowing_requests', 'request_versions', 'request_items', 'request_supporting_documents', 'stored_files', 'audit_events'])
+            ->mapWithKeys(fn ($table) => [$table => \Illuminate\Support\Facades\DB::table($table)->orderBy('id')->get()->toJson()])->all();
+        $paths = Storage::disk('local')->allFiles();
+        $value = match ($field) {
+            'represents_student_activity' => 1,
+            'permission_to_conduct_letter' => $this->letter('unsupported-ptc.pdf'),
+            default => 'Unsupported student detail',
+        };
+        $payload = $this->payload() + [$field => $value];
+        ($request ? $this->put(route('requests.update', $request), $payload) : $this->post(route('requests.store'), $payload))
+            ->assertSessionHasErrors($field);
+        foreach ($before as $table => $rows) {
+            $this->assertSame($rows, \Illuminate\Support\Facades\DB::table($table)->orderBy('id')->get()->toJson(), $table);
+        }
+        $this->assertEqualsCanonicalizing($paths, Storage::disk('local')->allFiles());
+    }
+
+    public function test_saved_legacy_external_activity_submits_without_ptc_and_retains_historical_evidence(): void
+    {
+        $request = $this->draft(withLetter: true);
+        $ptc = $this->legacyPtc($request);
+        $attributes = $ptc->getAttributes();
+        // Unused historical PTC bytes must not block the required request letter.
+        Storage::disk('local')->delete($ptc->file->storage_path);
+        $this->submit($request)->assertSessionHasNoErrors();
+        $request->refresh();
+        $this->assertSame(RequestStatus::UnderSpmu, $request->status);
+        $this->assertFalse($request->currentVersion->requiresPermissionToConduct());
+        $this->assertSame($attributes, $ptc->fresh()->getAttributes());
+        $this->get(route('requests.show', $request))->assertOk()->assertDontSee('data-document-type="PTC_LETTER"', false);
+    }
+
+    public function test_editing_a_legacy_external_draft_supersedes_ptc_without_deleting_its_file(): void
+    {
+        $request = $this->draft(withLetter: true);
+        $ptc = $this->legacyPtc($request);
+        $bytes = Storage::disk('local')->get($ptc->file->storage_path);
+        $this->put(route('requests.update', $request), $this->payload())->assertSessionHasNoErrors();
+        $this->assertFalse($request->fresh()->currentVersion->represents_student_activity);
+        $this->assertFalse($ptc->fresh()->is_current);
+        $this->assertNotNull($ptc->fresh()->superseded_at);
+        $this->assertSame($bytes, Storage::disk('local')->get($ptc->file->storage_path));
+        $this->assertDatabaseHas('audit_events', ['action_code' => 'REQUEST_SUPPORTING_DOCUMENT_SUPERSEDED', 'record_id' => $request->id]);
+        $this->get(route('files.show', $ptc->file))->assertOk();
+    }
+
+    private function legacyPtc(BorrowingRequest $request): RequestSupportingDocument
+    {
+        $request->currentVersion->update(['represents_student_activity' => true]);
+        $file = app(ProtectedFileService::class)->storeUpload($this->letter('historical-ptc.pdf'), 'legacy-ptc-fixtures', 'REQUEST_SUPPORTING_DOCUMENT');
+        $file->update(['uploaded_by_user_id' => $request->borrower_user_id]);
+        return RequestSupportingDocument::create([
+            'request_id' => $request->id, 'request_version_id' => $request->currentVersion->id,
+            'document_type' => RequestSupportingDocument::TYPE_PERMISSION_TO_CONDUCT, 'version_no' => 1,
+            'stored_file_id' => $file->id, 'uploaded_by_user_id' => $request->borrower_user_id,
+            'uploaded_at' => now(), 'is_current' => true, 'verification_status' => 'RETURNED_FOR_REVISION',
+        ])->fresh();
     }
 
     #[DataProvider('missingConsent')]
@@ -238,7 +359,7 @@ class ExternalBorrowingSubmissionTest extends TestCase
         $payload['purpose_event'] = 'Failed edit must not be saved';
         $payload['represents_student_activity'] = 1;
         $payload['approved_request_letter'] = $this->letter('replacement.pdf');
-        $this->put(route('requests.update', $request), $payload)->assertSessionHasErrors('permission_to_conduct_letter');
+        $this->put(route('requests.update', $request), $payload)->assertSessionHasErrors('represents_student_activity');
         $this->assertSame($original->purpose_event, $request->fresh()->currentVersion->purpose_event);
         $this->assertSame($originalItemId, $request->fresh()->currentVersion->items()->sole()->id);
         $this->assertSame(1, $original->supportingDocuments()->current()->count());

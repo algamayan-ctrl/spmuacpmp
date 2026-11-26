@@ -8,6 +8,7 @@
 .record-table-actions{display:flex;flex-wrap:wrap;gap:6px;align-items:center;min-height:38px}
 .record-table-footer{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;padding-block:12px 4px;border-top:1px solid var(--border);margin-top:10px}
 .record-table-footer p{margin:0}
+.record-table-footer .record-table-page-size{display:inline-flex;align-items:center;gap:6px;margin:0 0 0 auto;font-size:12px;color:var(--text-muted);white-space:nowrap}
 .record-table-footer nav{display:flex;flex-wrap:wrap;align-items:center;gap:5px}
 .record-table-footer [aria-disabled=true],.record-table-footer button:disabled{opacity:.5;cursor:default}
 .record-table-footer .button{min-width:32px;justify-content:center}
@@ -18,6 +19,14 @@ table[data-record-table] tbody tr[hidden]{display:none!important}
 .gate-pass-toolbar.record-table-toolbar .record-browser-search{flex:2 1 230px}
 .approval-queue .approval-queue-filters.record-table-toolbar{display:flex;flex-wrap:wrap}
 .approval-queue-filters.record-table-toolbar label{flex:1 1 140px}
+/* Keep the verification filters and Clear aligned in one desktop row. */
+.approval-queue .approval-queue-filters.is-verification.record-table-toolbar{display:grid;grid-template-columns:minmax(200px,1fr) 120px 160px repeat(2,120px) 100px auto}
+.approval-queue .approval-queue-filters.is-verification.record-table-toolbar label{min-width:0}
+.approval-queue .approval-queue-filters.is-verification.record-table-toolbar input{min-width:0}
+.approval-queue .approval-queue-filters.is-verification.record-table-toolbar select{min-width:0;padding-inline:10px 28px}
+.approval-queue .approval-queue-filters.is-verification.record-table-toolbar > button{white-space:nowrap}
+@media(max-width:1240px){.approval-queue .approval-queue-filters.is-verification.record-table-toolbar{grid-template-columns:repeat(3,minmax(0,1fr))}.approval-queue .approval-queue-filters.is-verification.record-table-toolbar .record-browser-search{grid-column:1/-1}}
+@media(max-width:640px){.approval-queue .approval-queue-filters.is-verification.record-table-toolbar{grid-template-columns:minmax(0,1fr)}.approval-queue .approval-queue-filters.is-verification.record-table-toolbar > button{justify-self:stretch}}
 .inventory-history-filter.record-table-toolbar{grid-template-columns:none}
 @media(max-width:640px){.record-table-toolbar label,.record-table-toolbar .record-table-search{flex:1 1 140px;min-width:0}.record-table-toolbar .record-table-search,.record-table-actions{flex-basis:100%}.record-table-footer nav{max-width:100%}.record-table-footer{align-items:flex-start}.record-table-footer .button{padding-inline:9px}}
 @media print{.record-table-toolbar,.record-table-footer,.record-table-no-results{display:none!important}table[data-record-table] tbody tr[data-record-row]{display:table-row!important}table[data-record-table] tbody tr[data-record-row][hidden]{display:table-row!important}}

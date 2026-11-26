@@ -126,7 +126,7 @@ class RequestCancellationWorkflowTest extends TestCase
                 ->withSession(['active_workspace' => 'BORROWER'])
                 ->get($url)
                 ->assertOk()
-                ->assertSeeText('Cancellation reason')
+                ->assertSeeText($url === route('notifications.index') ? 'Reason for cancellation' : 'Cancellation reason')
                 ->assertSeeText('No longer needed for the activity.');
         }
 
@@ -134,11 +134,11 @@ class RequestCancellationWorkflowTest extends TestCase
             ->withSession(['active_workspace' => 'BORROWER'])
             ->get(route('requests.show', $request->fresh()))
             ->assertOk()
-            ->assertSeeInOrder(['Submitted', 'SPMU Head Review', 'Cancelled'])
+            ->assertSeeInOrder(['Submitted', 'Action Officer Verification', 'SPMU Head Review', 'Pickup Scheduled', 'Release Processing', 'Return Processing', 'Completed'])
             ->assertSeeText('Cancelled')
             ->assertDontSeeText('Pickup Missed')
-            ->assertDontSeeText('Release Processing')
-            ->assertDontSeeText('Return Processing');
+            ->assertSeeText('Release Processing')
+            ->assertSeeText('Return Processing');
 
         // A borrower-initiated cancellation notifies Action Officers that no
         // further release action is required (RequestWorkflowService::

@@ -66,7 +66,7 @@
             </label>
             <label>Submitted from<input id="approval-queue-from" type="date"></label>
             <label>Submitted to<input id="approval-queue-to" type="date"></label>
-            <label>Show entries<select id="approval-queue-size">@foreach([5, 10, 25, 50, 100] as $size)<option value="{{ $size }}">{{ $size }}</option>@endforeach</select></label>
+            <label>Show entries<select id="approval-queue-size">@foreach([5, 10, 25, 50, 100] as $size)<option value="{{ $size }}">{{ $size }} entries</option>@endforeach</select></label>
             <button class="button secondary" id="approval-queue-clear" type="button">Clear</button>
         </div>
     @endif

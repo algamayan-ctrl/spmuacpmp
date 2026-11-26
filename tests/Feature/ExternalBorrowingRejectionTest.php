@@ -44,7 +44,7 @@ class ExternalBorrowingRejectionTest extends TestCase
 
     public static function activities(): array
     {
-        return ['regular' => [false], 'conditional PTC' => [true]];
+        return ['external regular' => [false]];
     }
 
     #[DataProvider('activities')]
@@ -162,14 +162,13 @@ class ExternalBorrowingRejectionTest extends TestCase
 
     public static function evidenceFailures(): array
     {
-        return ['missing letter' => [RequestSupportingDocument::TYPE_REQUEST_LETTER, false], 'corrupt letter' => [RequestSupportingDocument::TYPE_REQUEST_LETTER, true],
-            'missing PTC' => [RequestSupportingDocument::TYPE_PERMISSION_TO_CONDUCT, false], 'corrupt PTC' => [RequestSupportingDocument::TYPE_PERMISSION_TO_CONDUCT, true]];
+        return ['missing letter' => [RequestSupportingDocument::TYPE_REQUEST_LETTER, false], 'corrupt letter' => [RequestSupportingDocument::TYPE_REQUEST_LETTER, true]];
     }
 
     #[DataProvider('evidenceFailures')]
     public function test_sao_revalidates_required_corrected_private_evidence(string $type, bool $corrupt): void
     {
-        $request = $this->corrected(true);
+        $request = $this->corrected();
         $this->sign($this->sao(), 'SAO ink');
         $doc = $request->currentVersion->supportingDocuments()->where('document_type', $type)->sole();
         if ($corrupt) {
@@ -297,7 +296,7 @@ class ExternalBorrowingRejectionTest extends TestCase
     #[DataProvider('auditFailures')]
     public function test_failed_audit_rolls_back_without_attempting_a_misleading_notice(string $stage): void
     {
-        $request = $stage === 'verify' ? $this->corrected(true) : $this->verified(true);
+        $request = $stage === 'verify' ? $this->corrected() : $this->verified();
         if ($stage === 'verify') {
             $this->sign($this->sao(), 'Rollback SAO ink');
         }

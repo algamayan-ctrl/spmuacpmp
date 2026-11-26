@@ -240,7 +240,7 @@ class DashboardKpiAndGatePassStatusTest extends TestCase
         $this->assertSame(0, $overview['count'], 'SPMU-internal Gate Pass processing must never count as a borrower obligation.');
     }
 
-    public function test_gate_pass_only_pending_shows_as_info_not_accountability_pending_on_my_borrowings(): void
+    public function test_gate_pass_only_pending_uses_shared_staff_status_on_my_borrowings(): void
     {
         $borrower = $this->borrower();
         $custody = $this->custody($borrower, released: true, returned: true);
@@ -249,8 +249,8 @@ class DashboardKpiAndGatePassStatusTest extends TestCase
         $response = $this->withSession(['active_workspace' => 'BORROWER'])
             ->actingAs($borrower)->get(route('custody.index'));
 
-        $response->assertOk()->assertSee($custody->custody_no)->assertSee('Gate Pass Processing')
-            ->assertSee('data-borrowings-status="GATE_PASS_PROCESSING"', false)
+        $response->assertOk()->assertSee($custody->custody_no)->assertSee('Accountability Review')
+            ->assertSee('data-borrowings-status="ACCOUNTABILITY_REVIEW"', false)
             ->assertDontSee('Accountability Pending')->assertDontSee('View Obligation');
         $this->assertSame('OBLIGATION_OPEN', $custody->fresh()->status);
         $this->assertSame(0, app(BorrowerObligationService::class)->overview($borrower->id)['count']);

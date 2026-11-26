@@ -1155,6 +1155,13 @@ select[multiple], select[size]:not([size="1"]) { padding-right: 11px; background
 .detail-list dt { padding-right: 12px; color: var(--text-muted); font-size: 11px; font-weight: 700; }
 .detail-list dd { color: var(--text); }
 .detail-list.compact dt, .detail-list.compact dd { padding-top: 6px; padding-bottom: 6px; }
+.borrower-contact-disclosure { margin-top: 12px; min-width: 0; }
+.borrower-contact-disclosure > summary { width: fit-content; padding: 6px 0; color: var(--interactive); font-size: 12px; font-weight: 700; cursor: pointer; }
+.borrower-contact-disclosure .detail-list { margin-top: 4px; }
+.borrower-contact-disclosure dd, .borrower-record-identity dd { overflow-wrap: anywhere; }
+.borrower-record-identity { margin-bottom: 16px; }
+.borrower-custody-stack .borrower-record-identity { margin: 0; padding: 0 20px 14px; }
+.request-operational-page .request-information-card > .borrower-contact-disclosure { margin: 8px 16px 12px; }
 .timeline { display: grid; gap: 12px; }
 .timeline article { display: grid; grid-template-columns: 54px 1fr; gap: 12px; }
 .timeline article > span { color: var(--interactive); font-size: 11px; font-weight: 800; }
@@ -4042,7 +4049,8 @@ html[data-theme="dark"] .login-page .login-alt-divider::after {
     display: none;
 }
 
-.request-tracker__step.is-complete::after {
+.request-tracker__step.is-complete::after,
+.request-tracker__step.is-not-required.is-passed::after {
     background: var(--success);
 }
 
@@ -4105,7 +4113,8 @@ html[data-theme="dark"] .login-page .login-alt-divider::after {
 }
 
 .request-tracker__copy time,
-.request-tracker__pending-label {
+.request-tracker__pending-label,
+.request-tracker__state-label {
     color: var(--text-muted);
     font-size: 10px;
     font-weight: 650;
@@ -4167,8 +4176,20 @@ html[data-theme="dark"] .login-page .login-alt-divider::after {
     min-width: 0;
 }
 
-.request-tracker__step.is-pending .request-tracker__copy {
+.request-tracker__step.is-pending .request-tracker__copy,
+.request-tracker__step.is-not-required .request-tracker__copy {
     opacity: .72;
+}
+
+.request-tracker__step.is-pending .request-tracker__copy strong,
+.request-tracker__step.is-not-required .request-tracker__copy strong {
+    color: var(--text-muted);
+}
+
+.request-tracker__step.is-stopped .request-tracker__copy time,
+.request-tracker__step.is-stopped .request-tracker__pending-label,
+.request-tracker__step.is-stopped .request-tracker__state-label {
+    color: var(--danger);
 }
 
 .request-tracker__hint {

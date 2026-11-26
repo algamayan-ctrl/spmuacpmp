@@ -41,12 +41,13 @@ test('Action Officer Verification and SPMU Head Review never show a borrowed tim
     assert.doesNotMatch(headStep[1], /reviewStartedAt/);
 });
 
-test('Action Officer Verification only appears for off-campus / Gate Pass requests', () => {
+test('Action Officer Verification stays visible with an explicit on-campus exemption', () => {
     assert.match(
         tracker,
         /\$requiresActionOfficerVerification = \(bool\) \(\$request->currentVersion\?->off_campus\);/
     );
-    assert.match(tracker, /if \(\$requiresActionOfficerVerification\) \{\s*\$steps\[\$actionOfficerStepIndex\]/);
+    assert.match(tracker, /'not_required' => ! \$requiresActionOfficerVerification/);
+    assert.match(tracker, /Not required for on-campus borrowing/);
 });
 
 test('the Gate Pass page tracker reuses the shared tooltip structure instead of showing no date/description at all', () => {

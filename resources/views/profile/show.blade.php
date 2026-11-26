@@ -1,5 +1,9 @@
 @extends('layouts.app', ['title' => 'Account Settings'])
 @section('content')
+@php
+    $registration = $user->borrowerRegistration;
+    $isExternalBorrower = $registration?->registration_type === \App\Enums\RegistrationType::External;
+@endphp
 {{-- This is the Account Settings UI for the current user. --}}
 <style>
     .account-settings-page {
@@ -69,6 +73,21 @@
         grid-auto-rows: minmax(64px, 1fr);
         gap: 0 16px;
         align-content: stretch;
+    }
+
+    .account-settings-identity > .section-heading {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .account-settings-primary-grid > .account-settings-identity.is-external {
+        align-self: start;
+        height: auto;
+    }
+
+    .account-settings-identity.is-external .account-settings-identity-grid {
+        flex-grow: 0;
+        grid-auto-rows: auto;
     }
 
     .account-settings-readonly {
@@ -441,17 +460,29 @@
     </section>
 
     <section class="account-settings-primary-grid" aria-label="Account identity, profile, and signing">
-        <article class="card account-settings-card account-settings-identity" aria-labelledby="account-details-heading">
+        <article @class(['card account-settings-card account-settings-identity', 'is-external' => $isExternalBorrower]) aria-labelledby="account-details-heading">
             <div class="section-heading">
                 <div>
                     <p class="eyebrow">Official Identity</p>
                     <h2 id="account-details-heading">Profile Information</h2>
                 </div>
+                @if($registration?->registration_type)
+                    <span class="status-badge status-info">{{ $registration->registration_type->label() }}</span>
+                @endif
             </div>
 
             <div class="account-settings-identity-grid">
+                @if($isExternalBorrower)
+                    <div class="account-settings-readonly"><span>Full Name</span><strong>{{ $user->full_name }}</strong></div>
+                    <div class="account-settings-readonly"><span>Email</span><strong>{{ $user->email }}</strong></div>
+                    <div class="account-settings-readonly"><span>Mobile Number</span><strong>{{ $user->mobile_no ?: 'Not recorded' }}</strong></div>
+                    <div class="account-settings-readonly"><span>Valid ID</span><strong>{{ $registration->validIdFile ? 'On file · Private' : 'Not recorded' }}</strong></div>
+                    <div class="account-settings-readonly is-wide"><span>Company / Agency / Institution</span><strong>{{ filled($registration->company_name) ? $registration->company_name : 'Not recorded' }}</strong></div>
+                @else
                 <div class="account-settings-readonly"><span>Borrower / Employee Number</span><strong>{{ $user->employee_no ?: 'Not recorded' }}</strong></div>
                 <div class="account-settings-readonly"><span>Full Name</span><strong>{{ $user->full_name }}</strong></div>
+                <div class="account-settings-readonly"><span>Email</span><strong>{{ $user->email }}</strong></div>
+                <div class="account-settings-readonly"><span>Mobile Number</span><strong>{{ $user->mobile_no ?: 'Not recorded' }}</strong></div>
                 <div class="account-settings-readonly"><span>Designation / Position</span><strong>{{ $user->designation ?: 'Not recorded' }}</strong></div>
                 <div class="account-settings-readonly">
                     <span>Personnel Type</span>
@@ -492,10 +523,15 @@
                         <strong>{{ $additionalRequestingUnits->pluck('unit_name')->join(', ') }}</strong>
                     </div>
                 @endif
+                @endif
             </div>
 
             <p class="account-settings-note">
+                @if($isExternalBorrower)
+                    Identity and company details reflect your borrower registration and are maintained by the SPMU Admin. Contact the SPMU Admin if a detail requires correction. Your Valid ID is kept private.
+                @else
                 Official identity, designation, personnel type, employment status, and organizational assignments are maintained by the SPMU Admin. Contact the SPMU Admin if an official account detail requires correction.
+                @endif
             </p>
         </article>
 

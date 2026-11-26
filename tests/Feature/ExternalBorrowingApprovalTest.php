@@ -12,6 +12,7 @@ use Illuminate\Validation\ValidationException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\Support\ActualExternalApprovalFlow;
+use Tests\Support\EvidenceFixtures;
 use Tests\TestCase;
 
 class ExternalBorrowingApprovalTest extends TestCase
@@ -30,9 +31,8 @@ class ExternalBorrowingApprovalTest extends TestCase
 
     public static function packets(): array
     {
-        return ['off-campus regular' => [true, false, false], 'off-campus PTC' => [true, false, true],
-            'on-campus regular' => [false, false, false], 'on-campus linen' => [false, true, false],
-            'on-campus multi-item with PTC' => [false, true, true]];
+        return ['off-campus regular' => [true, false, false],
+            'on-campus regular' => [false, false, false], 'on-campus linen and non-linen' => [false, true, false]];
     }
 
     private function items(bool $off, bool $linen): array
@@ -152,20 +152,51 @@ class ExternalBorrowingApprovalTest extends TestCase
     public static function evidenceFailures(): array
     {
         return ['letter missing' => ['letter', 'missing'], 'letter changed' => ['letter', 'changed'],
-            'PTC missing' => ['ptc', 'missing'], 'PTC changed' => ['ptc', 'changed'],
             'borrower snapshot missing' => ['borrower', 'missing'], 'borrower snapshot changed' => ['borrower', 'changed'],
             'SAO snapshot missing' => ['sao', 'missing'], 'SAO snapshot changed' => ['sao', 'changed'],
             'Head signature missing' => ['head', 'missing'], 'Head signature changed' => ['head', 'changed']];
     }
 
+    public static function legacyPtcFiles(): array
+    {
+        return [['missing'], ['corrupt']];
+    }
+
+    #[DataProvider('legacyPtcFiles')]
+    public function test_legacy_external_ptc_does_not_block_approval_or_get_marked_as_a_required_document(string $condition): void
+    {
+        $request = $this->ready();
+        $version = $request->currentVersion;
+        $version->update(['represents_student_activity' => true]);
+        $file = app(ProtectedFileService::class)->storeBytes(EvidenceFixtures::pdfBytes('Historical external PTC'),
+            'legacy-external-ptc', 'old-ptc.pdf', 'application/pdf', 'pdf', 'REQUEST_SUPPORTING_DOCUMENT', $request->borrower_user_id);
+        $ptc = \App\Models\RequestSupportingDocument::create([
+            'request_id' => $request->id, 'request_version_id' => $version->id,
+            'document_type' => \App\Models\RequestSupportingDocument::TYPE_PERMISSION_TO_CONDUCT,
+            'version_no' => 1, 'stored_file_id' => $file->id, 'uploaded_by_user_id' => $request->borrower_user_id,
+            'uploaded_at' => now(), 'is_current' => true, 'verification_status' => 'PENDING_VERIFICATION',
+        ])->fresh();
+        $before = $ptc->getAttributes();
+        if ($condition === 'missing') {
+            Storage::disk('local')->delete($file->storage_path);
+        } else {
+            Storage::disk('local')->put($file->storage_path, 'Invalid historical bytes');
+        }
+        $html = $this->as($this->headUser())->get(route('requests.show', $request))->assertOk()->getContent();
+        $this->assertStringContainsString('data-required-supporting-present="1"', $html);
+        $this->assertStringNotContainsString('aria-label="Submitted request documents"', $html);
+        $this->approve($request->fresh())->assertSessionHasNoErrors();
+        $this->assertSame(RequestStatus::ApprovedReadyForRelease, $request->fresh()->status);
+        $this->assertSame($before, $ptc->fresh()->getAttributes());
+    }
+
     #[DataProvider('evidenceFailures')]
     public function test_approval_revalidates_current_private_documents_and_saved_signatures(string $target, string $failure): void
     {
-        $r = $this->ready(activity: true);
+        $r = $this->ready();
         $v = $r->currentVersion;
         $file = match ($target) {
             'letter' => $v->supportingDocuments()->where('document_type', \App\Models\RequestSupportingDocument::TYPE_REQUEST_LETTER)->sole()->file,
-            'ptc' => $v->supportingDocuments()->where('document_type', \App\Models\RequestSupportingDocument::TYPE_PERMISSION_TO_CONDUCT)->sole()->file,
             'borrower' => $v->borrowerSignature->file,
             'sao' => SignatureSnapshot::findOrFail($v->approvalSteps()->where('sequence_no', 1)->sole()->signature_snapshot_id)->file,
             'head' => $this->headUser()->currentSignature()->sole()->file,
@@ -173,7 +204,7 @@ class ExternalBorrowingApprovalTest extends TestCase
         if ($failure === 'missing') Storage::disk('local')->delete($file->storage_path);
         else Storage::disk('local')->put($file->storage_path, 'corrupted synthetic evidence');
         $before = $this->state($r);
-        $this->approve($r)->assertSessionHasErrors(match($target) {'letter' => 'approved_request_letter', 'ptc' => 'permission_to_conduct_letter', default => 'signature'});
+        $this->approve($r)->assertSessionHasErrors(match($target) {'letter' => 'approved_request_letter', default => 'signature'});
         $this->assertSame($before, $this->state($r));
     }
 
@@ -350,7 +381,7 @@ class ExternalBorrowingApprovalTest extends TestCase
     #[DataProvider('rollbacks')]
     public function test_failed_approval_removes_only_new_rows_files_and_never_attempts_precommit_email(string $failure): void
     {
-        $r = $this->ready(activity: true);
+        $r = $this->ready();
         if ($failure === 'SPMU_RESERVATION_CONFLICT') $r->currentVersion->items->first()->inventoryItem->update(['total_quantity' => 0]);
         $before = $this->state($r);
         $attempts = 0;

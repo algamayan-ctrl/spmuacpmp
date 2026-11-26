@@ -38,11 +38,10 @@
     $canConfirmPreparation = $hasPickupSchedule && ! $hasOpenPreparationIssue;
 @endphp
 
-<x-request-progress-tracker :request="$custody->request" :show-current-status="false" :compact="true" :release-view="true" />
-
 <section class="content-grid two release-overview-grid">
     <article class="card release-context-card">
         <div class="release-card-title"><x-icon name="calendar" size="21" /><h2>Borrowing Details</h2></div>
+        <x-borrower-identity :borrower="$custody->borrower" :version="$custody->requestVersion ?: $version" />
         <div class="release-details-columns">
             <div class="release-detail-group">
                 <dl class="detail-list release-context-list">

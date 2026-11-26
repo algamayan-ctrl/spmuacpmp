@@ -7,8 +7,10 @@
         <dl class="detail-list request-information-list">
             <dt>Borrower</dt>
             <dd>{{ $borrowingRequest->borrower->full_name }}</dd>
-            <dt>Office / College / Unit</dt>
-            <dd>{{ $borrowingRequest->borrower->organizationalUnit?->unit_name ?: '—' }}</dd>
+            <dt>Borrower Type</dt>
+            <dd>{{ $v->affiliationTypeLabel() }}</dd>
+            <dt>{{ $v->isExternalAffiliation() ? 'Company / Agency / Institution' : 'Office / College / Unit' }}</dt>
+            <dd>{{ $v->affiliationLabel() }}</dd>
             <dt>Event</dt>
             <dd>{{ $v->purpose_event }}</dd>
             <dt>Location</dt>
@@ -18,6 +20,7 @@
             <dt>Expected Return Date</dt>
             <dd>{{ optional($v->return_date ?: $v->return_due_at)->format('d F Y') }}</dd>
         </dl>
+        <x-borrower-contact-details :borrower="$borrowingRequest->borrower" />
     </article>
 
 @php
